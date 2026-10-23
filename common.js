@@ -8,7 +8,8 @@ export const firebaseConfig = {
   appId: '1:944810320688:web:0f0916483880318fd91ef5',
 };
 
-// 商品（在庫は「残り」の目安表示にだけ使う）
+// 初期の商品（管理画面で最初に取り込む。以後はデータベースの catalog を使う）
+// 在庫は「残り」の目安表示にだけ使う
 export const PRODUCTS = [
   { id: 'cal-school', cat: 'cal', name: 'スクールカレンダー 2027', s: 'スクールカレンダー', price: 500, stock: 200, img: 'img/p2.jpg' },
   { id: 'cal-season', cat: 'cal', name: 'シーズナルカレンダー 2027', s: 'シーズナルカレンダー', price: 500, stock: 50, img: 'img/p1.jpg' },
@@ -20,5 +21,8 @@ export const PRODUCTS = [
   { id: 'pc-3', cat: 'pc', name: 'ポストカード 紫陽花', s: 'PC 紫陽花', price: 100, stock: 30, img: 'img/p7.jpg' },
   { id: 'book', cat: 'bk', name: '写真集 光画 vol.2', s: '光画 vol.2', price: 600, stock: 30, img: 'img/p8.jpg' },
 ];
-export const CATS = { cal: 'カレンダー', cf: 'クリアファイル', pc: 'ポストカード', bk: '写真集' };
+export const CATS = { cal: 'カレンダー', cf: 'クリアファイル', pc: 'ポストカード', bk: '写真集', other: 'その他' };
 export const DENOMS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
+
+// データベースの商品を並び順に（削除済みは除く）
+export const activeProducts = list => list.filter(p => !p.archived).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));

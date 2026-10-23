@@ -3,9 +3,18 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=17';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=18';
 
-const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+// 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
+let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
+let P = Object.fromEntries(catalog.map(p => [p.id, p]));
+// セッションごとに管理者が選んだ商品だけを出す（選んでいない古いセッションは全商品）
+const shownProducts = () => {
+  const list = activeProducts(catalog);
+  const ids = settings?.products;
+  return Array.isArray(ids) ? list.filter(p => ids.includes(p.id)) : list;
+};
+const genreOf = p => p.genre || CATS[p.cat] || 'その他';
 
 const $ = s => document.querySelector(s);
 const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
@@ -20,7 +29,18 @@ const db = initializeFirestore(initializeApp(firebaseConfig), {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
+// 商品の一覧を購読（端末内にも保存されるので電波がなくても表示できる）
+onSnapshot(collection(db, 'catalog'), snap => {
+  if (snap.empty) return;
+  catalog = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  P = Object.fromEntries(catalog.map(p => [p.id, p]));
+  // 削除された商品はかごから外す
+  for (const id of Object.keys(cart)) if (!P[id] || P[id].archived) delete cart[id];
+  if (shopKey) { renderGrid(); renderCart(); renderHist(); renderDels(); renderSum(); }
+});
+
 let shopKey = null;
+let lastProdKey = '';
 let device = '';
 let sales = [];
 let settings = { float: 0, open: true, openedAt: 0 };
@@ -41,26 +61,7 @@ const cashGrid = () => DENOMS.map(d => `<label>${d.toLocaleString()}円<input da
 const readCounts = el => Object.fromEntries([...el.querySelectorAll('input[data-d]')].map(i => [i.dataset.d, Math.max(0, Math.floor(Number(i.value || 0)))]));
 const sumCounts = c => DENOMS.reduce((t, d) => t + d * (Number(c?.[d]) || 0), 0);
 
-let mode = 'join';
-let newKey = null;
-let newLabel = '';
-$('#loginFloat').innerHTML = cashGrid();
-// 釣り銭準備金を入れないと開始できない
-$('#loginFloat').addEventListener('input', () => {
-  const v = sumCounts(readCounts($('#loginFloat')));
-  $('#loginFloatTotal').textContent = yen(v);
-  $('#createBtn').disabled = v <= 0;
-});
-document.querySelector('.seg').addEventListener('click', e => {
-  const m = e.target.dataset.m;
-  if (!m) return;
-  mode = m;
-  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
-  $('#passHint').textContent = m === 'new' ? '新しいセッション名を決めてください（ほかの部員にも伝えます）' : '部で決めたセッション名を入力してください';
-  $('#loginBtn').textContent = m === 'new' ? '次へ（釣り銭の入力）' : '始める';
-  $('#loginMsg').textContent = '';
-});
-
+// セッションは管理者が作る。端末はセッション名で参加するだけ
 $('#loginBtn').onclick = async () => {
   const pass = $('#pass').value.trim();
   const name = $('#devname').value.trim();
@@ -72,49 +73,16 @@ $('#loginBtn').onclick = async () => {
   let snap;
   try {
     snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
-    if (mode === 'join' && snap.exists() && snap.data().ended) {
-      msg.textContent = 'このセッションは管理者により終了されています。';
-      return;
-    }
-    if (mode === 'join' && !snap.exists()) {
-      msg.textContent = 'このセッション名は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
-      return;
-    }
-    if (mode === 'new') {
-      if (snap.exists()) { msg.textContent = 'このセッション名はすでに使われています。別のセッション名にしてください。'; return; }
-      newKey = key;
-      newLabel = pass;
-      msg.textContent = '';
-      $('#step1').hidden = true;
-      $('#step2').hidden = false;
-      return;
-    }
   } catch (e) {
     msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
     return;
   }
-  if (!snap.data()?.label) setDoc(doc(db, 'shops', key, 'meta', 'settings'), { label: pass }, { merge: true }).catch(() => {});
+  if (!snap.exists()) { msg.textContent = 'このセッション名は見つかりません。管理者に作ってもらってください。'; return; }
+  if (snap.data().ended) { msg.textContent = 'このセッションは管理者により終了されています。'; return; }
   enter(key, name);
 };
-$('#backBtn1').onclick = () => { $('#step2').hidden = true; $('#step1').hidden = false; $('#loginMsg').textContent = ''; };
-$('#createBtn').onclick = async () => {
-  const counts = readCounts($('#loginFloat'));
-  const float = sumCounts(counts);
-  const msg = $('#loginMsg');
-  if (float <= 0 || !newKey) return;
-  $('#createBtn').disabled = true;
-  msg.textContent = '作成中…';
-  try {
-    const ref = doc(db, 'shops', newKey, 'meta', 'settings');
-    if ((await getDoc(ref)).exists()) { msg.textContent = 'このセッション名はすでに使われています。戻って別のセッション名にしてください。'; return; }
-    await setDoc(ref, { createdAt: serverTimestamp(), created: Date.now(), label: newLabel, floatCounts: counts, float, open: true, openedAt: Date.now() });
-  } catch (e) {
-    msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
-    $('#createBtn').disabled = false;
-    return;
-  }
-  enter(newKey, $('#devname').value.trim());
-};
+$('#pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#devname').focus(); });
+
 // 強制終了されたら、この端末のログイン情報を消して最初の画面へ
 function showEnded() {
   store.del('pf.key');
@@ -150,6 +118,8 @@ function start(key, name) {
   onSnapshot(settingsDoc(), snap => {
     settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
     if (settings.ended) { showEnded(); return; }
+    const prodKey = JSON.stringify(settings.products || null);
+    if (prodKey !== lastProdKey) { lastProdKey = prodKey; renderGrid(); renderCart(); renderSum(); }
     renderOpen();
     renderSum();
   });
@@ -172,10 +142,13 @@ addEventListener('offline', () => renderSync());
 
 /* ---------- 会計 ---------- */
 function renderGrid() {
-  $('#grid').innerHTML = PRODUCTS.map(p => `
+  // このセッションで扱わない商品はかごから外す
+  const ok = new Set(shownProducts().map(p => p.id));
+  for (const id of Object.keys(cart)) if (!ok.has(id)) delete cart[id];
+  $('#grid').innerHTML = shownProducts().map(p => `
     <div class="item" data-id="${p.id}">
       <button class="ph-btn" data-act="view" aria-label="${esc(p.name)}の写真を大きく見る"><img class="ph" src="${p.img}" alt="" draggable="false"></button>
-      <span class="cat ${p.cat}">${CATS[p.cat]}</span>
+      <span class="cat ${p.cat || ''}">${esc(genreOf(p))}</span>
       <span class="nm">${esc(p.name)}</span>
       <span class="pr">${yen(p.price)}</span>
       <div class="stepper">
@@ -272,7 +245,7 @@ $('#okBtn').onclick = () => {
   const id = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
   // 待たずに書き込む：端末内のキャッシュには即時反映、送信は裏で行われる
   setDoc(doc(salesCol(), id), {
-    items: { ...cart }, total, paid, change: paid - total,
+    items: { ...cart }, prices: Object.fromEntries(Object.keys(cart).map(id => [id, P[id].price])), total, paid, change: paid - total,
     t: now, at: serverTimestamp(), dev: device, void: false,
   }).catch(() => renderSync(true));
   $('#doneChange').textContent = yen(paid - total);
@@ -578,20 +551,29 @@ function renderSum() {
   const live = sales.filter(s => !s.void && !isDel(s));
   const sold = {};
   let items = 0;
-  live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; items += q; }));
+  const soldYen = {};
+  // 売上は会計したときの価格で数える（あとで価格を変えても過去の売上は変わらない）
+  live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => {
+    sold[id] = (sold[id] || 0) + q; items += q;
+    soldYen[id] = (soldYen[id] || 0) + q * (s.prices?.[id] ?? P[id]?.price ?? 0);
+  }));
   $('#kTotal').textContent = yen(live.reduce((t, s) => t + s.total, 0));
   $('#kCount').textContent = live.length;
   $('#kItems').textContent = items;
 
   let rows = '';
-  for (const c of Object.keys(CATS)) {
-    const ps = PRODUCTS.filter(p => p.cat === c);
+  // このセッションで扱う商品と、（外した・削除した商品でも）売れたことのある商品
+  const inSession = new Set(shownProducts().map(p => p.id));
+  const listed = catalog.filter(p => inSession.has(p.id) || sold[p.id]).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const genres = [...new Set(listed.map(genreOf))];
+  for (const c of genres) {
+    const ps = listed.filter(p => genreOf(p) === c);
     let cq = 0, cy = 0;
     ps.forEach(p => {
-      const q = sold[p.id] || 0; cq += q; cy += q * p.price;
-      rows += `<tr><td>${esc(p.s)}</td><td>${q}</td><td>${p.stock - q}</td><td>${yen(q * p.price)}</td></tr>`;
+      const q = sold[p.id] || 0; cq += q; cy += soldYen[p.id] || 0;
+      rows += `<tr><td>${esc(p.s || p.name)}${p.archived ? '（削除済み）' : ''}</td><td>${q}</td><td>${p.stock != null ? p.stock - q : ''}</td><td>${yen(soldYen[p.id] || 0)}</td></tr>`;
     });
-    if (ps.length > 1) rows += `<tr class="subtot"><td>${CATS[c]} 計</td><td>${cq}</td><td></td><td>${yen(cy)}</td></tr>`;
+    if (ps.length > 1) rows += `<tr class="subtot"><td>${esc(c)} 計</td><td>${cq}</td><td></td><td>${yen(cy)}</td></tr>`;
   }
   $('#byProd').innerHTML = `<table><tr><th>商品</th><th>販売数</th><th>残り</th><th>売上</th></tr>${rows}</table>`;
 
@@ -727,7 +709,12 @@ function renderOpen() {
   const closed = settings.open === false;
   $('#v-reg').classList.toggle('closed', closed);
   $('#closedPanel').hidden = !closed;
-  if (closed) $('#closedAt').textContent = settings.closedAt ? `${hm(settings.closedAt)} に締めました。次に始めるときは、釣り銭の枚数を入れて「開ける」を押してください。` : '';
+  if (closed) {
+    $('#closedTitle').textContent = settings.closedAt ? '締め済み' : 'まだ開いていません';
+    $('#closedAt').textContent = settings.closedAt
+      ? `${hm(settings.closedAt)} に締めました。次に始めるときは、釣り銭の枚数を入れて「開ける」を押してください。`
+      : '釣り銭準備金の枚数を入れて「開ける」を押すと、会計を始められます。';
+  }
   renderLastClose();
   if (sumBuilt) {
     $('#closeArea').hidden = closed;
@@ -763,12 +750,13 @@ function renderCloses() {
 }
 
 function downloadCsv() {
-  const head = ['日時', '端末', '状態', ...PRODUCTS.map(p => p.s), '合計', '預かり', 'お釣り'];
+  const cols = catalog.filter(p => !p.archived || sales.some(s => s.items?.[p.id]));
+  const head = ['日時', '端末', '状態', ...cols.map(p => p.s || p.name), '合計', '預かり', 'お釣り'];
   const lines = [...sales].reverse().map(s => {
     const d = new Date(s.t);
     return [
       `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.toTimeString().slice(0, 8)}`,
-      s.dev, isDel(s) ? '削除' : s.void ? '取消' : '', ...PRODUCTS.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
+      s.dev, isDel(s) ? '削除' : s.void ? '取消' : '', ...cols.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv' });

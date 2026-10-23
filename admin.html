@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 管理</title>
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -33,14 +33,25 @@
     <div class="list" id="reqList"></div>
   </main>
   <main id="v-shops" class="view" hidden>
+    <div class="adm-bar"><button id="newSession" class="btn primary">＋ 新しいセッションを作る</button></div>
     <div class="list" id="shopList"></div>
   </main>
-  <nav class="tabs" style="grid-template-columns: 1fr 1fr">
+  <main id="v-prods" class="view" hidden>
+    <div class="adm-grid" id="prodGrid"></div>
+    <div class="adm-bar" style="padding-bottom:12px"><button id="showArch" class="btn ghost">削除した商品を表示</button></div>
+  </main>
+  <nav class="tabs">
     <button data-v="req" class="on">削除リクエスト</button>
-    <button data-v="shops">セッション一覧</button>
+    <button data-v="shops">セッション</button>
+    <button data-v="prods">商品</button>
   </nav>
 </div>
 
-<script type="module" src="admin.js?v=17"></script>
+<!-- 下から出るシート（商品の編集・セッションの作成） -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-body" id="sheetBody"></div>
+</div>
+
+<script type="module" src="admin.js?v=18"></script>
 </body>
 </html>
