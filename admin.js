@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collectionGroup, doc, getDoc, setDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS } from './common.js?v=10';
+import { firebaseConfig, PRODUCTS } from './common.js?v=13';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 const $ = s => document.querySelector(s);

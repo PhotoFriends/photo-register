@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=10';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=13';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 
@@ -468,17 +468,21 @@ function buildSum() {
         </div>
         <p id="fMsg" class="small"></p>
       </div>
-      <div class="lbl" style="margin-top:12px">締めのときに数えた枚数</div>
+      <div class="lbl" style="margin-top:12px">締めのときに数えた枚数（「締めを始める」でパスワードを入れると入力できます）</div>
       <div id="countCash" class="cash">${cashGrid()}</div>
       <div class="row"><span>数えた現金</span><b id="cCounted">¥0</b></div>
-      <div class="row"><span>あるはずの現金</span><b id="cExpected">¥0</b></div>
-      <div class="row"><span>差額</span><span id="cDiff" class="diff">¥0</span></div>
-      <p class="small">あるはずの現金 ＝ 釣り銭準備金 ＋ <span id="openedLbl">開始</span>からの売上（全端末）</p>
+      <p class="small">あるはずの現金と差額は、締めたあとに表示されます</p>
       <div id="closeArea">
-        <button id="closeStart" class="btn danger big">締める</button>
-        <div id="closePwRow" class="selrow" hidden style="margin-top:8px">
-          <input id="closePw" type="password" inputmode="numeric" autocomplete="off" placeholder="締めのパスワード">
-          <button id="closeGo" class="btn danger">締める</button>
+        <div id="closeLock">
+          <button id="closeStart" class="btn danger big">締めを始める</button>
+          <div id="closePwRow" class="selrow" hidden style="margin-top:8px">
+            <input id="closePw" type="password" inputmode="numeric" autocomplete="off" placeholder="締めのパスワード">
+            <button id="closeUnlock" class="btn danger">確認</button>
+          </div>
+        </div>
+        <div id="closeFinal" class="selrow" hidden>
+          <button id="closeGo" class="btn danger big" style="flex:1">締める</button>
+          <button id="closeCancel" class="btn ghost">やめる</button>
         </div>
         <p id="closeMsg" class="small"></p>
       </div>
@@ -526,7 +530,9 @@ function buildSum() {
   };
   $('#countCash').addEventListener('input', e => { cash[e.target.dataset.d] = Number(e.target.value || 0); renderCash(); });
   $('#closeStart').onclick = () => { $('#closePwRow').hidden = false; $('#closePw').focus(); };
-  $('#closePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#closeGo').click(); });
+  $('#closePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#closeUnlock').click(); });
+  $('#closeUnlock').onclick = unlockClose;
+  $('#closeCancel').onclick = () => lockClose('');
   $('#closeGo').onclick = doClose;
   $('#csvBtn').onclick = downloadCsv;
   $('#logoutBtn').onclick = () => {
@@ -540,6 +546,7 @@ function buildSum() {
     location.reload();
   };
   sumBuilt = true;
+  renderCloseLock();
   renderOpen();
   renderCloses();
 }
@@ -597,16 +604,10 @@ function endFloatEdit(text) {
 
 function renderCash() {
   if (!floatEditing) $('#fTotal').textContent = yen(settings.float || 0);
-  const counted = DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0);
-  const expected = Number(settings.float || 0) + sessionSales().reduce((t, s) => t + s.total, 0);
-  $('#openedLbl').textContent = settings.openedAt ? `開始（${hm(settings.openedAt)}）` : '開始';
-  const diff = counted - expected;
-  $('#cCounted').textContent = yen(counted);
-  $('#cExpected').textContent = yen(expected);
-  const el = $('#cDiff');
-  el.textContent = (diff > 0 ? '+' : diff < 0 ? '−' : '') + yen(Math.abs(diff)) + (diff === 0 ? '（一致）' : diff > 0 ? '（多い）' : '（足りない）');
-  el.className = 'diff ' + (diff === 0 ? 'ok' : 'ng');
+  // あるはずの現金・差額は締める前には出さない（締めの結果として表示）
+  $('#cCounted').textContent = yen(DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0));
 }
+const diffText = d => (d > 0 ? '+' : d < 0 ? '−' : '') + yen(Math.abs(d)) + (d === 0 ? '（一致）' : d > 0 ? '（多い）' : '（足りない）');
 
 /* ---------- 締める・開ける ---------- */
 // 締めのパスワードはサーバーのルールで照合する（このコードには書かない）
@@ -614,8 +615,44 @@ const sessionSales = () => sales.filter(s => !s.void && !isDel(s) && s.t >= (set
 let closes = [];
 let closesOn = false;
 
-async function doClose() {
+// 数えた枚数の入力は、締めのパスワードをサーバーで確認できてから
+let closePwOk = null;
+async function unlockClose() {
   const pw = $('#closePw').value;
+  const msg = $('#closeMsg');
+  if (!pw) return;
+  if (!navigator.onLine || fromCache) { msg.textContent = '締めは電波のある場所で行ってください'; return; }
+  const op = Date.now().toString(36) + '-' + crypto.randomUUID().slice(0, 8);
+  $('#closeUnlock').disabled = true;
+  try {
+    await setDoc(doc(db, 'shops', shopKey, 'closeauth', op), { pw, by: device, t: Date.now(), kind: 'unlock' });
+    closePwOk = pw;
+    msg.textContent = '数えた枚数を入力して「締める」を押してください';
+    renderCloseLock();
+  } catch (e) {
+    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '確認できませんでした（通信を確認してください）';
+  }
+  $('#closePw').value = '';
+  $('#closeUnlock').disabled = false;
+}
+function lockClose(text) {
+  closePwOk = null;
+  DENOMS.forEach(d => { cash[d] = 0; });
+  document.querySelectorAll('#countCash input').forEach(i => { i.value = ''; });
+  $('#closePwRow').hidden = true;
+  $('#closeMsg').textContent = text;
+  renderCloseLock();
+  renderCash();
+}
+function renderCloseLock() {
+  const unlocked = !!closePwOk;
+  $('#closeLock').hidden = unlocked;
+  $('#closeFinal').hidden = !unlocked;
+  document.querySelectorAll('#countCash input').forEach(i => { i.disabled = !unlocked; });
+}
+
+async function doClose() {
+  const pw = closePwOk;
   const msg = $('#closeMsg');
   if (!pw) return;
   if (!navigator.onLine || fromCache) { msg.textContent = '締めは電波のある場所で行ってください'; return; }
@@ -638,14 +675,9 @@ async function doClose() {
     });
     batch.set(settingsDoc(), { open: false, closeId: cid, closedAt: now }, { merge: true });
     await batch.commit();
-    msg.textContent = '';
-    $('#closePw').value = '';
-    $('#closePwRow').hidden = true;
-    DENOMS.forEach(d => { cash[d] = 0; });
-    document.querySelectorAll('#countCash input').forEach(i => { i.value = ''; });
+    lockClose('');
   } catch (e) {
     msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '締められませんでした（通信を確認してください）';
-    $('#closePw').value = '';
   }
   $('#closeGo').disabled = false;
 }
@@ -675,6 +707,7 @@ function renderOpen() {
   $('#v-reg').classList.toggle('closed', closed);
   $('#closedPanel').hidden = !closed;
   if (closed) $('#closedAt').textContent = settings.closedAt ? `${hm(settings.closedAt)} に締めました。次に始めるときは、釣り銭の枚数を入れて「開ける」を押してください。` : '';
+  renderLastClose();
   if (sumBuilt) {
     $('#closeArea').hidden = closed;
     $('#floatEdit').hidden = closed;
@@ -689,7 +722,20 @@ function renderOpen() {
   }
 }
 
+// 締め済み画面に、直前の締めの結果（あるはずの現金・差額）を出す
+function renderLastClose() {
+  const c = closes.find(x => x.closedAt === settings.closedAt) || closes[0];
+  const el = $('#lastClose');
+  if (settings.open !== false || !c) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="row"><span>売上（${hm(c.openedAt)} 〜 ${hm(c.closedAt)}）</span><b>${yen(c.sales)}</b></div>
+    <div class="row"><span>釣り銭準備金</span><b>${yen(c.float)}</b></div>
+    <div class="row"><span>あるはずの現金</span><b>${yen(c.expected)}</b></div>
+    <div class="row"><span>数えた現金</span><b>${yen(c.counted)}</b></div>
+    <div class="row"><span>差額</span><span class="diff ${c.diff === 0 ? 'ok' : 'ng'}">${diffText(c.diff)}</span></div>`;
+}
 function renderCloses() {
+  renderLastClose();
   if (!sumBuilt) return;
   $('#closeList').innerHTML = closes.length ? `<table class="closes"><tr><th>締め</th><th>売上</th><th>あるはず</th><th>数えた</th><th>差額</th></tr>${
     closes.map(c => `<tr><td>${hm(c.closedAt)}<br>${esc(c.by)}</td><td>${yen(c.sales)}</td><td>${yen(c.expected)}</td><td>${yen(c.counted)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}</table>` : 'まだありません';
