@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -21,9 +21,9 @@
         <button data-m="join" class="on">始める</button>
         <button data-m="new">新しく始める</button>
       </div>
-      <label>合言葉
+      <label>セッション名
         <input id="pass" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <span id="passHint" class="small">部で決めた合言葉を入力してください</span>
+        <span id="passHint" class="small">部で決めたセッション名を入力してください</span>
       </label>
       <label>この端末の名前
         <input id="devname" type="text" placeholder="例：1号機" maxlength="12">
@@ -39,6 +39,7 @@
       <button id="backBtn1" class="btn ghost">戻る</button>
     </div>
     <p id="loginMsg" class="msg"></p>
+    <a class="adminlink" href="admin.html">管理者</a>
   </div>
 </section>
 
@@ -70,7 +71,7 @@
   <!-- 履歴 -->
   <main id="v-hist" class="view" hidden>
     <div class="histbar">
-      <div id="histNormal" class="selrow"><button id="selStart" class="btn">選択して削除</button><button id="delsBtn" class="btn ghost">削除履歴</button></div>
+      <div id="histNormal" class="selrow"><button id="selStart" class="btn">選択して削除</button><button id="delsBtn" class="btn ghost">削除済み</button></div>
       <div id="histSel" hidden>
         <div class="selrow">
           <span id="selCount">0件選択中</span>
@@ -86,7 +87,7 @@
     </div>
     <div id="restoreRow" class="selrow" hidden style="padding:8px 12px 0">
       <input id="restorePw" type="password" inputmode="numeric" autocomplete="off" placeholder="削除パスワード">
-      <button id="restoreGo" class="btn danger">復元する</button>
+      <button id="restoreGo" class="btn danger">戻す</button>
     </div>
     <div id="delsList" class="list" hidden></div>
     <div id="hist" class="list"></div>
@@ -143,6 +144,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>

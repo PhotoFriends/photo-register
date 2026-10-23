@@ -3,31 +3,9 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=10';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyByNolalAuk-d6LHBwENVrshE7QpKo4Jss',
-  authDomain: 'pf-register-1023.firebaseapp.com',
-  projectId: 'pf-register-1023',
-  storageBucket: 'pf-register-1023.firebasestorage.app',
-  messagingSenderId: '944810320688',
-  appId: '1:944810320688:web:0f0916483880318fd91ef5',
-};
-
-// 商品（在庫は「残り」の目安表示にだけ使う）
-const PRODUCTS = [
-  { id: 'cal-school', cat: 'cal', name: 'スクールカレンダー 2027', s: 'スクールカレンダー', price: 500, stock: 200, img: 'img/p2.jpg' },
-  { id: 'cal-season', cat: 'cal', name: 'シーズナルカレンダー 2027', s: 'シーズナルカレンダー', price: 500, stock: 50, img: 'img/p1.jpg' },
-  { id: 'cf-1', cat: 'cf', name: 'クリアファイル 三日月・桜', s: 'CF 三日月・桜', price: 300, stock: 30, img: 'img/p3.jpg' },
-  { id: 'cf-2', cat: 'cf', name: 'クリアファイル 飛行機・海', s: 'CF 飛行機・海', price: 300, stock: 30, img: 'img/p4.jpg' },
-  { id: 'cf-3', cat: 'cf', name: 'クリアファイル 雪並木・夜景', s: 'CF 雪並木・夜景', price: 300, stock: 30, img: 'img/p9.jpg' },
-  { id: 'pc-1', cat: 'pc', name: 'ポストカード ヤドカリ', s: 'PC ヤドカリ', price: 100, stock: 30, img: 'img/p5.jpg' },
-  { id: 'pc-2', cat: 'pc', name: 'ポストカード 羽田の空', s: 'PC 羽田の空', price: 100, stock: 30, img: 'img/p6.jpg' },
-  { id: 'pc-3', cat: 'pc', name: 'ポストカード 紫陽花', s: 'PC 紫陽花', price: 100, stock: 30, img: 'img/p7.jpg' },
-  { id: 'book', cat: 'bk', name: '写真集 光画 vol.2', s: '光画 vol.2', price: 600, stock: 30, img: 'img/p8.jpg' },
-];
-const CATS = { cal: 'カレンダー', cf: 'クリアファイル', pc: 'ポストカード', bk: '写真集' };
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
-const DENOMS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
 
 const $ = s => document.querySelector(s);
 const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
@@ -65,6 +43,7 @@ const sumCounts = c => DENOMS.reduce((t, d) => t + d * (Number(c?.[d]) || 0), 0)
 
 let mode = 'join';
 let newKey = null;
+let newLabel = '';
 $('#loginFloat').innerHTML = cashGrid();
 // 釣り銭準備金を入れないと開始できない
 $('#loginFloat').addEventListener('input', () => {
@@ -77,7 +56,7 @@ document.querySelector('.seg').addEventListener('click', e => {
   if (!m) return;
   mode = m;
   document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
-  $('#passHint').textContent = m === 'new' ? '新しい合言葉を決めてください（ほかの部員にも伝えます）' : '部で決めた合言葉を入力してください';
+  $('#passHint').textContent = m === 'new' ? '新しいセッション名を決めてください（ほかの部員にも伝えます）' : '部で決めたセッション名を入力してください';
   $('#loginBtn').textContent = m === 'new' ? '次へ（釣り銭の入力）' : '始める';
   $('#loginMsg').textContent = '';
 });
@@ -86,19 +65,21 @@ $('#loginBtn').onclick = async () => {
   const pass = $('#pass').value.trim();
   const name = $('#devname').value.trim();
   const msg = $('#loginMsg');
-  if (pass.length < 2) { msg.textContent = '合言葉を入力してください'; return; }
+  if (pass.length < 2) { msg.textContent = 'セッション名を入力してください'; return; }
   if (!name) { msg.textContent = '端末の名前を入力してください'; return; }
   const key = await keyOf(pass);
   msg.textContent = '確認中…';
+  let snap;
   try {
-    const snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
+    snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
     if (mode === 'join' && !snap.exists()) {
-      msg.textContent = 'この合言葉は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
+      msg.textContent = 'このセッション名は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
       return;
     }
     if (mode === 'new') {
-      if (snap.exists()) { msg.textContent = 'この合言葉はすでに使われています。別の合言葉にしてください。'; return; }
+      if (snap.exists()) { msg.textContent = 'このセッション名はすでに使われています。別のセッション名にしてください。'; return; }
       newKey = key;
+      newLabel = pass;
       msg.textContent = '';
       $('#step1').hidden = true;
       $('#step2').hidden = false;
@@ -108,6 +89,7 @@ $('#loginBtn').onclick = async () => {
     msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
     return;
   }
+  if (!snap.data()?.label) setDoc(doc(db, 'shops', key, 'meta', 'settings'), { label: pass }, { merge: true }).catch(() => {});
   enter(key, name);
 };
 $('#backBtn1').onclick = () => { $('#step2').hidden = true; $('#step1').hidden = false; $('#loginMsg').textContent = ''; };
@@ -120,8 +102,8 @@ $('#createBtn').onclick = async () => {
   msg.textContent = '作成中…';
   try {
     const ref = doc(db, 'shops', newKey, 'meta', 'settings');
-    if ((await getDoc(ref)).exists()) { msg.textContent = 'この合言葉はすでに使われています。戻って別の合言葉にしてください。'; return; }
-    await setDoc(ref, { createdAt: serverTimestamp(), floatCounts: counts, float, open: true, openedAt: Date.now() });
+    if ((await getDoc(ref)).exists()) { msg.textContent = 'このセッション名はすでに使われています。戻って別のセッション名にしてください。'; return; }
+    await setDoc(ref, { createdAt: serverTimestamp(), created: Date.now(), label: newLabel, floatCounts: counts, float, open: true, openedAt: Date.now() });
   } catch (e) {
     msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
     $('#createBtn').disabled = false;
@@ -141,6 +123,8 @@ function start(key, name) {
   $('#login').hidden = true;
   $('#app').hidden = false;
   renderGrid();
+  // 参加した端末を記録（売上がまだなくても「端末別」に出すため）
+  setDoc(settingsDoc(), { devices: { [name]: Date.now() } }, { merge: true }).catch(() => {});
   onSnapshot(salesCol(), { includeMetadataChanges: true }, snap => {
     fromCache = snap.metadata.fromCache;
     sales = snap.docs.map(d => ({ id: d.id, ...d.data(), pending: d.metadata.hasPendingWrites }))
@@ -175,20 +159,24 @@ addEventListener('offline', () => renderSync());
 /* ---------- 会計 ---------- */
 function renderGrid() {
   $('#grid').innerHTML = PRODUCTS.map(p => `
-    <button class="item" data-id="${p.id}">
-      <img class="ph" src="${p.img}" alt="" draggable="false">
+    <div class="item" data-id="${p.id}">
+      <button class="ph-btn" data-act="plus" aria-label="${esc(p.name)}を1つ追加"><img class="ph" src="${p.img}" alt="" draggable="false"></button>
       <span class="cat ${p.cat}">${CATS[p.cat]}</span>
-      <span class="qty" hidden></span>
-      <span class="minus" role="button" aria-label="1つ減らす" hidden>−</span>
       <span class="nm">${esc(p.name)}</span>
       <span class="pr">${yen(p.price)}</span>
-    </button>`).join('');
+      <div class="stepper">
+        <button data-act="minus" aria-label="1つ減らす">−</button>
+        <span class="qty">0</span>
+        <button data-act="plus" aria-label="1つ増やす">＋</button>
+      </div>
+    </div>`).join('');
 }
+// 左の − で減らす、右の ＋（または写真）で増やす
 $('#grid').addEventListener('click', e => {
-  const item = e.target.closest('.item');
-  if (!item) return;
-  const id = item.dataset.id;
-  if (e.target.closest('.minus')) cart[id] = Math.max(0, (cart[id] || 0) - 1);
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = btn.closest('.item').dataset.id;
+  if (btn.dataset.act === 'minus') cart[id] = Math.max(0, (cart[id] || 0) - 1);
   else cart[id] = (cart[id] || 0) + 1;
   if (!cart[id]) delete cart[id];
   renderCart();
@@ -199,9 +187,8 @@ function renderCart() {
   document.querySelectorAll('.item').forEach(el => {
     const q = cart[el.dataset.id] || 0;
     el.classList.toggle('sel', q > 0);
-    el.querySelector('.qty').hidden = !q;
     el.querySelector('.qty').textContent = q;
-    el.querySelector('.minus').hidden = !q;
+    el.querySelector('[data-act=minus]').disabled = !q;
   });
   $('#cartTotal').textContent = yen(cartTotal());
   $('#cartCount').textContent = cartCount() + '点';
@@ -286,20 +273,24 @@ document.querySelector('.tabs').addEventListener('click', e => {
 
 /* ---------- 履歴 ---------- */
 const hm = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-// 削除済みは履歴・集計から外し、「削除履歴」にだけ出す
-const shown = () => sales.filter(s => !s.deleted);
+// 削除の状態：none / requested（リクエスト中）/ deleted（パスワードで削除）
+const stOf = s => s.delState || (s.deleted ? 'deleted' : 'none');
+const isDel = s => stOf(s) !== 'none';
+const itemsText = s => Object.entries(s.items || {}).map(([id, q]) => `${esc(P[id]?.s || id)}×${q}`).join('、');
+// 削除済みは履歴・集計から外し、「削除済み」にだけ出す
+const shown = () => sales.filter(s => !isDel(s));
 function renderHist() {
   if (!shown().length) { $('#hist').innerHTML = '<div class="empty">まだ会計はありません</div>'; return; }
   $('#hist').innerHTML = shown().map(s => `
     <div class="sale ${s.void ? 'void' : ''} ${picked.has(s.id) ? 'picked' : ''}" data-sid="${s.id}">
       <span class="chk">${picked.has(s.id) ? '✓' : ''}</span>
-      <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
-      <div class="act"><button data-id="${s.id}">${s.void ? '取消を戻す' : '取消'}</button></div>
-      <div class="its">${Object.entries(s.items || {}).map(([id, q]) => `${esc(P[id]?.s || id)}×${q}`).join('、')}</div>
+      <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
+      <div class="act"><button data-id="${s.id}">削除をリクエスト</button></div>
+      <div class="its">${itemsText(s)}</div>
       <div><div class="tot">${yen(s.total)}</div><div class="pay">預 ${yen(s.paid)}／釣 ${yen(s.change)}</div></div>
     </div>`).join('');
 }
-// 取消は2回タップ（誤操作防止）
+// 「削除をリクエスト」は2回タップ（誤操作防止）。パスワード不要で削除済みへ移り、管理者が判断する
 $('#hist').addEventListener('click', e => {
   if (selecting) {
     const card = e.target.closest('.sale');
@@ -320,7 +311,11 @@ $('#hist').addEventListener('click', e => {
     return;
   }
   const s = sales.find(x => x.id === b.dataset.id);
-  if (s) updateDoc(doc(salesCol(), s.id), { void: !s.void, voidBy: device, voidT: Date.now() }).catch(() => renderSync(true));
+  if (s) {
+    updateDoc(doc(salesCol(), s.id), { delState: 'requested', purgeReq: false, delBy: device, delT: Date.now(), rejected: false })
+      .catch(() => renderSync(true));
+    $('#histMsg').textContent = '削除をリクエストしました（「削除済み」で確認できます）';
+  }
 });
 
 /* ---------- 選択して削除 ---------- */
@@ -343,49 +338,58 @@ function endSel() {
   renderSel();
   renderHist();
 }
-// 削除・復元は「削除済み」の印を切り替えるだけ。どちらもパスワードをサーバーで照合する
-async function setDeleted(ids, pw, deleted) {
+// 削除の状態を変える（削除・戻す・完全削除の依頼）。どれも削除パスワードをサーバーで照合する
+async function setDelState(ids, pw, change) {
   const batch = writeBatch(db);
   const now = Date.now();
   for (const id of ids) {
     const op = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
-    batch.set(doc(db, 'shops', shopKey, 'dellog', op), { pw, by: device, t: now, sale: id, deleted });
-    batch.update(doc(salesCol(), id), deleted
-      ? { deleted: true, delOp: op, delBy: device, delT: now }
-      : { deleted: false, delOp: op, restoredBy: device, restoredT: now });
+    batch.set(doc(db, 'shops', shopKey, 'dellog', op), { pw, by: device, t: now, sale: id, ...change });
+    batch.update(doc(salesCol(), id), { ...change, delOp: op, ...(change.delState === 'none' ? { restoredBy: device, restoredT: now } : { delBy: device, delT: now }) });
   }
   await batch.commit();
 }
 
 let showDels = false;
-let restoreId = null;
+let pendingAct = null; // { id, kind: 'restore' | 'purge' }
 $('#delsBtn').onclick = () => {
   showDels = !showDels;
-  $('#delsBtn').textContent = showDels ? '削除履歴を閉じる' : '削除履歴';
+  $('#delsBtn').textContent = showDels ? '削除済みを閉じる' : '削除済み';
   $('#delsList').hidden = !showDels;
   $('#hist').hidden = showDels;
   $('#selStart').hidden = showDels;
-  restoreId = null;
+  pendingAct = null;
   $('#restoreRow').hidden = true;
+  $('#histMsg').textContent = '';
   renderDels();
 };
 function renderDels() {
   if (!showDels) return;
-  const ds = sales.filter(s => s.deleted).sort((a, b) => (b.delT || 0) - (a.delT || 0));
-  $('#delsList').innerHTML = ds.length ? ds.map(s => `
-    <div class="sale void ${s.id === restoreId ? 'picked' : ''}">
-      <div class="meta">${s.delT ? hm(s.delT) : ''} ${esc(s.delBy || '')} が削除（会計 ${hm(s.t)} ${esc(s.dev)}）</div>
-      <div class="act"><button data-rid="${s.id}">復元</button></div>
-      <div class="its">${Object.entries(s.items || {}).map(([id, q]) => `${esc(P[id]?.s || id)}×${q}`).join('、')}</div>
+  const ds = sales.filter(isDel).sort((a, b) => (b.delT || 0) - (a.delT || 0));
+  $('#delsList').innerHTML = ds.length ? ds.map(s => {
+    const st = stOf(s);
+    const tag = s.purgeReq ? '完全削除を依頼中' : st === 'requested' ? '削除リクエスト中' : '削除済み';
+    return `
+    <div class="sale void ${pendingAct?.id === s.id ? 'picked' : ''}">
+      <div class="meta">${s.delT ? hm(s.delT) : ''} ${esc(s.delBy || '')}<span class="tag">${tag}</span>（会計 ${hm(s.t)} ${esc(s.dev)}）</div>
+      <div class="act">
+        <button data-rid="${s.id}" data-k="restore">戻す</button>
+        ${s.purgeReq ? '' : `<button data-rid="${s.id}" data-k="purge">完全削除を依頼</button>`}
+      </div>
+      <div class="its">${itemsText(s)}</div>
       <div><div class="tot">${yen(s.total)}</div><div class="pay">預 ${yen(s.paid)}／釣 ${yen(s.change)}</div></div>
-    </div>`).join('') : '<div class="empty">削除された履歴はありません</div>';
+    </div>`;
+  }).join('') : '<div class="empty">削除済みの履歴はありません</div>';
 }
 $('#delsList').addEventListener('click', e => {
   const b = e.target.closest('button[data-rid]');
   if (!b) return;
-  restoreId = b.dataset.rid;
+  pendingAct = { id: b.dataset.rid, kind: b.dataset.k };
   $('#restoreRow').hidden = false;
-  $('#histMsg').textContent = '復元するには削除パスワードを入力してください';
+  $('#restoreGo').textContent = pendingAct.kind === 'restore' ? '戻す' : '完全削除を依頼';
+  $('#histMsg').textContent = pendingAct.kind === 'restore'
+    ? '履歴に戻すには削除パスワードを入力してください'
+    : '完全な削除は管理者が行います。依頼するには削除パスワードを入力してください';
   $('#restorePw').focus();
   renderDels();
 });
@@ -393,16 +397,21 @@ $('#restorePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#re
 $('#restoreGo').onclick = async () => {
   const pw = $('#restorePw').value;
   const msg = $('#histMsg');
-  if (!pw || !restoreId) return;
-  if (!navigator.onLine || fromCache) { msg.textContent = '復元は電波のある場所で行ってください'; return; }
+  if (!pw || !pendingAct) return;
+  if (!navigator.onLine || fromCache) { msg.textContent = '電波のある場所で行ってください'; return; }
   $('#restoreGo').disabled = true;
   try {
-    await setDeleted([restoreId], pw, false);
-    msg.textContent = '1件復元しました';
-    restoreId = null;
+    if (pendingAct.kind === 'restore') {
+      await setDelState([pendingAct.id], pw, { delState: 'none', purgeReq: false });
+      msg.textContent = '履歴に戻しました';
+    } else {
+      await setDelState([pendingAct.id], pw, { delState: 'deleted', purgeReq: true });
+      msg.textContent = '管理者に完全削除を依頼しました';
+    }
+    pendingAct = null;
     $('#restoreRow').hidden = true;
   } catch (e) {
-    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '復元できませんでした（通信を確認してください）';
+    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : 'できませんでした（通信を確認してください）';
   }
   $('#restorePw').value = '';
   $('#restoreGo').disabled = false;
@@ -422,8 +431,8 @@ $('#delGo').onclick = async () => {
   $('#delGo').disabled = true;
   msg.textContent = '削除中…';
   try {
-    await setDeleted(ids, pw, true);
-    msg.textContent = `${ids.length}件削除しました（削除履歴に残ります）`;
+    await setDelState(ids, pw, { delState: 'deleted', purgeReq: false });
+    msg.textContent = `${ids.length}件削除しました（「削除済み」に残ります）`;
     endSel();
   } catch (e) {
     msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '削除できませんでした（通信を確認してください）';
@@ -538,7 +547,7 @@ function buildSum() {
 function renderSum() {
   if (!shopKey) return;
   if (!sumBuilt) buildSum();
-  const live = sales.filter(s => !s.void && !s.deleted);
+  const live = sales.filter(s => !s.void && !isDel(s));
   const sold = {};
   let items = 0;
   live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; items += q; }));
@@ -560,7 +569,7 @@ function renderSum() {
 
   const devs = {};
   live.forEach(s => { devs[s.dev] = devs[s.dev] || { n: 0, y: 0 }; devs[s.dev].n++; devs[s.dev].y += s.total; });
-  const names = [...new Set([device, ...Object.keys(devs)])];
+  const names = [...new Set([device, ...Object.keys(settings.devices || {}), ...Object.keys(devs)])];
   $('#byDev').innerHTML = `<table><tr><th>端末</th><th>会計数</th><th>売上</th></tr>${
     names.map(n => `<tr><td>${esc(n)}</td><td>${devs[n]?.n || 0}</td><td>${yen(devs[n]?.y || 0)}</td></tr>`).join('')}</table>`;
 
@@ -601,7 +610,7 @@ function renderCash() {
 
 /* ---------- 締める・開ける ---------- */
 // 締めのパスワードはサーバーのルールで照合する（このコードには書かない）
-const sessionSales = () => sales.filter(s => !s.void && !s.deleted && s.t >= (settings.openedAt || 0));
+const sessionSales = () => sales.filter(s => !s.void && !isDel(s) && s.t >= (settings.openedAt || 0));
 let closes = [];
 let closesOn = false;
 
@@ -692,7 +701,7 @@ function downloadCsv() {
     const d = new Date(s.t);
     return [
       `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.toTimeString().slice(0, 8)}`,
-      s.dev, s.deleted ? '削除' : s.void ? '取消' : '', ...PRODUCTS.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
+      s.dev, isDel(s) ? '削除' : s.void ? '取消' : '', ...PRODUCTS.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv' });
