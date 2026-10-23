@@ -450,6 +450,15 @@ function buildSum() {
       <div class="lbl">釣り銭準備金（開始時の枚数）</div>
       <div id="floatCash" class="cash">${cashGrid()}</div>
       <div class="row"><span>釣り銭準備金</span><b id="fTotal">¥0</b></div>
+      <div id="floatEdit">
+        <button id="fEditBtn" class="btn">準備金を修正</button>
+        <div id="fPwRow" class="selrow" hidden>
+          <input id="fPw" type="password" inputmode="numeric" autocomplete="off" placeholder="締めのパスワード">
+          <button id="fSave" class="btn primary">保存</button>
+          <button id="fCancel" class="btn ghost">やめる</button>
+        </div>
+        <p id="fMsg" class="small"></p>
+      </div>
       <div class="lbl" style="margin-top:12px">締めのときに数えた枚数</div>
       <div id="countCash" class="cash">${cashGrid()}</div>
       <div class="row"><span>数えた現金</span><b id="cCounted">¥0</b></div>
@@ -474,13 +483,38 @@ function buildSum() {
       </div>
       <p class="small" id="logoutNote"></p>
     </div>`;
-  // 準備金は全端末で共有。入力のたびに保存（端末内には即時反映）
-  $('#floatCash').addEventListener('input', () => {
+  // 準備金の修正は締めのパスワードが必要（サーバーのルールで照合）
+  $('#fEditBtn').onclick = () => {
+    floatEditing = true;
+    $('#fEditBtn').hidden = true;
+    $('#fPwRow').hidden = false;
+    $('#fMsg').textContent = '枚数を直してから、締めのパスワードを入れて「保存」を押してください';
+    renderFloatInputs();
+  };
+  $('#fCancel').onclick = () => endFloatEdit('');
+  $('#floatCash').addEventListener('input', () => { if (floatEditing) $('#fTotal').textContent = yen(sumCounts(readCounts($('#floatCash')))); });
+  $('#fPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#fSave').click(); });
+  $('#fSave').onclick = async () => {
+    const pw = $('#fPw').value;
     const counts = readCounts($('#floatCash'));
-    settings = { ...settings, floatCounts: counts, float: sumCounts(counts) };
-    setDoc(settingsDoc(), { floatCounts: counts, float: sumCounts(counts) }, { merge: true }).catch(() => renderSync(true));
-    renderCash();
-  });
+    const float = sumCounts(counts);
+    if (!pw) return;
+    if (float <= 0) { $('#fMsg').textContent = '準備金を入力してください'; return; }
+    if (!navigator.onLine || fromCache) { $('#fMsg').textContent = '修正は電波のある場所で行ってください'; return; }
+    const op = Date.now().toString(36) + '-' + crypto.randomUUID().slice(0, 8);
+    $('#fSave').disabled = true;
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'shops', shopKey, 'closeauth', op), { pw, by: device, t: Date.now(), kind: 'float' });
+      batch.set(settingsDoc(), { floatCounts: counts, float, floatOp: op, floatBy: device, floatT: Date.now() }, { merge: true });
+      await batch.commit();
+      endFloatEdit('準備金を修正しました');
+    } catch (e) {
+      $('#fMsg').textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '保存できませんでした（通信を確認してください）';
+      $('#fPw').value = '';
+    }
+    $('#fSave').disabled = false;
+  };
   $('#countCash').addEventListener('input', e => { cash[e.target.dataset.d] = Number(e.target.value || 0); renderCash(); });
   $('#closeStart').onclick = () => { $('#closePwRow').hidden = false; $('#closePw').focus(); };
   $('#closePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#closeGo').click(); });
@@ -530,15 +564,30 @@ function renderSum() {
   $('#byDev').innerHTML = `<table><tr><th>端末</th><th>会計数</th><th>売上</th></tr>${
     names.map(n => `<tr><td>${esc(n)}</td><td>${devs[n]?.n || 0}</td><td>${yen(devs[n]?.y || 0)}</td></tr>`).join('')}</table>`;
 
-  // 自分が入力中の欄は上書きしない
-  if (!$('#floatCash').contains(document.activeElement)) {
-    $('#floatCash').querySelectorAll('input').forEach(i => { const n = Number(settings.floatCounts?.[i.dataset.d] || 0); i.value = n ? n : ''; });
-  }
+  renderFloatInputs();
+  renderCash();
+}
+
+// 準備金の欄は「修正」中だけ入力できる。修正中は他端末の更新で上書きしない
+let floatEditing = false;
+function renderFloatInputs() {
+  $('#floatCash').querySelectorAll('input').forEach(i => {
+    i.disabled = !floatEditing;
+    if (!floatEditing) { const n = Number(settings.floatCounts?.[i.dataset.d] || 0); i.value = n ? n : ''; }
+  });
+}
+function endFloatEdit(text) {
+  floatEditing = false;
+  $('#fPw').value = '';
+  $('#fPwRow').hidden = true;
+  $('#fEditBtn').hidden = false;
+  $('#fMsg').textContent = text;
+  renderFloatInputs();
   renderCash();
 }
 
 function renderCash() {
-  $('#fTotal').textContent = yen(settings.float || 0);
+  if (!floatEditing) $('#fTotal').textContent = yen(settings.float || 0);
   const counted = DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0);
   const expected = Number(settings.float || 0) + sessionSales().reduce((t, s) => t + s.total, 0);
   $('#openedLbl').textContent = settings.openedAt ? `開始（${hm(settings.openedAt)}）` : '開始';
@@ -619,7 +668,8 @@ function renderOpen() {
   if (closed) $('#closedAt').textContent = settings.closedAt ? `${hm(settings.closedAt)} に締めました。次に始めるときは、釣り銭の枚数を入れて「開ける」を押してください。` : '';
   if (sumBuilt) {
     $('#closeArea').hidden = closed;
-    $('#floatCash').querySelectorAll('input').forEach(i => { i.disabled = closed; });
+    $('#floatEdit').hidden = closed;
+    if (closed && floatEditing) endFloatEdit('');
   }
   if (!closesOn && shopKey) {
     closesOn = true;

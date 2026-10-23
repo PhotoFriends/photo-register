@@ -219,3 +219,6 @@ tr.subtot td { font-weight: 700; background: var(--bg); }
 .closedp .small { margin: 0; }
 #v-reg.closed .grid, #v-reg.closed .cartbar { display: none; }
 .closes td, .closes th { font-size: 12px; }
+.cash input:disabled { background: var(--bg); color: var(--ink); opacity: 1; -webkit-text-fill-color: var(--ink); }
+#floatEdit { margin: 4px 0 8px; }
+#floatEdit .selrow { margin-top: 0; }
