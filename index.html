@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 
@@ -144,6 +144,15 @@
   </div>
 </div>
 
+<!-- 写真のプレビュー（タップで閉じる） -->
+<div id="preview" class="preview" hidden>
+  <div class="pv-in">
+    <img id="pvImg" alt="">
+    <div id="pvCap" class="pv-cap"></div>
+    <div class="pv-cap" style="font-weight:400;font-size:13px;opacity:.8">タップで閉じる</div>
+  </div>
+</div>
+
 <!-- 完了表示 -->
 <div id="done" class="done" hidden>
   <div class="done-box">
@@ -154,6 +163,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=16"></script>
+<script type="module" src="app.js?v=17"></script>
 </body>
 </html>

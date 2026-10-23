@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=16';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=17';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 
@@ -174,7 +174,7 @@ addEventListener('offline', () => renderSync());
 function renderGrid() {
   $('#grid').innerHTML = PRODUCTS.map(p => `
     <div class="item" data-id="${p.id}">
-      <button class="ph-btn" data-act="plus" aria-label="${esc(p.name)}を1つ追加"><img class="ph" src="${p.img}" alt="" draggable="false"></button>
+      <button class="ph-btn" data-act="view" aria-label="${esc(p.name)}の写真を大きく見る"><img class="ph" src="${p.img}" alt="" draggable="false"></button>
       <span class="cat ${p.cat}">${CATS[p.cat]}</span>
       <span class="nm">${esc(p.name)}</span>
       <span class="pr">${yen(p.price)}</span>
@@ -185,11 +185,17 @@ function renderGrid() {
       </div>
     </div>`).join('');
 }
-// 左の − で減らす、右の ＋（または写真）で増やす
+// 左の − で減らす、右の ＋ で増やす。写真をタップすると全体を大きく表示
 $('#grid').addEventListener('click', e => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const id = btn.closest('.item').dataset.id;
+  if (btn.dataset.act === 'view') {
+    $('#pvImg').src = P[id].img;
+    $('#pvCap').textContent = `${P[id].name}　${yen(P[id].price)}`;
+    $('#preview').hidden = false;
+    return;
+  }
   if (btn.dataset.act === 'minus') cart[id] = Math.max(0, (cart[id] || 0) - 1);
   else cart[id] = (cart[id] || 0) + 1;
   if (!cart[id]) delete cart[id];
@@ -208,6 +214,7 @@ function renderCart() {
   $('#cartCount').textContent = cartCount() + '点';
   $('#payBtn').disabled = !cartCount();
 }
+$('#preview').onclick = () => { $('#preview').hidden = true; };
 $('#clearBtn').onclick = () => { cart = {}; renderCart(); };
 
 /* ---------- お会計 ---------- */
