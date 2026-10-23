@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=14';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=15';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 
