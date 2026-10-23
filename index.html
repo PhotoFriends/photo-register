@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 
@@ -135,6 +135,15 @@
   </div>
 </div>
 
+<!-- 管理者が終了したセッション -->
+<div id="ended" class="done" hidden>
+  <div class="done-box">
+    <div class="done-label">このセッションは管理者により終了されました</div>
+    <div id="endedSub" class="done-sub"></div>
+    <button id="endedBtn" class="btn primary big">最初の画面へ</button>
+  </div>
+</div>
+
 <!-- 完了表示 -->
 <div id="done" class="done" hidden>
   <div class="done-box">
@@ -145,6 +154,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

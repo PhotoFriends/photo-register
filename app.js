@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=15';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS } from './common.js?v=16';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 
@@ -72,6 +72,10 @@ $('#loginBtn').onclick = async () => {
   let snap;
   try {
     snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
+    if (mode === 'join' && snap.exists() && snap.data().ended) {
+      msg.textContent = 'このセッションは管理者により終了されています。';
+      return;
+    }
     if (mode === 'join' && !snap.exists()) {
       msg.textContent = 'このセッション名は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
       return;
@@ -111,6 +115,15 @@ $('#createBtn').onclick = async () => {
   }
   enter(newKey, $('#devname').value.trim());
 };
+// 強制終了されたら、この端末のログイン情報を消して最初の画面へ
+function showEnded() {
+  store.del('pf.key');
+  $('#endedSub').textContent = `${settings.endedAt ? hm(settings.endedAt) + ' に' : ''}終了しました。これまでの記録は管理者が確認できます。`;
+  $('#sheet').hidden = true;
+  $('#done').hidden = true;
+  $('#ended').hidden = false;
+}
+$('#endedBtn').onclick = () => location.reload();
 function enter(key, name) {
   store.set('pf.key', key);
   store.set('pf.dev', name);
@@ -136,6 +149,7 @@ function start(key, name) {
   }, () => renderSync(true));
   onSnapshot(settingsDoc(), snap => {
     settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
+    if (settings.ended) { showEnded(); return; }
     renderOpen();
     renderSum();
   });

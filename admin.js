@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collectionGroup, doc, getDocFromServer, setDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS } from './common.js?v=15';
+import { firebaseConfig, PRODUCTS } from './common.js?v=16';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 const $ = s => document.querySelector(s);
@@ -154,14 +154,25 @@ function renderShops() {
     const total = live.reduce((t, s) => t + s.total, 0);
     const dels = ss.filter(isDel).length;
     const cs = closes.filter(c => c.key === k);
-    const isOpen = st.open !== false;
+    const isOpen = st.open !== false && !st.ended;
+    const status = st.ended ? '終了' : isOpen ? '営業中' : '締め済み';
     const devs = Object.keys(st.devices || {});
     let detail = '';
     if (open.has(k)) {
       const cur = isOpen ? live.filter(s => s.t >= (st.openedAt || 0)) : [];
       const curTotal = cur.reduce((t, s) => t + s.total, 0);
+      const byDev = {};
+      live.forEach(s => { byDev[s.dev] = byDev[s.dev] || { n: 0, y: 0 }; byDev[s.dev].n++; byDev[s.dev].y += s.total; });
+      const devNames = [...new Set([...devs, ...Object.keys(byDev)])];
       detail = `
         <div class="adm-detail">
+          <div class="row"><span>セッション名</span><b>${esc(st.label || '（不明：この機能を入れる前に作られたため）')}</b></div>
+          ${st.ended ? `<div class="row"><span>終了</span><b>${hm(st.endedAt)}（管理者）</b></div>` : ''}
+          <h3>登録レジ（${devNames.length}台）</h3>
+          <table>
+            <tr><th>端末名</th><th>参加</th><th>会計</th><th>売上</th></tr>
+            ${devNames.map(n => `<tr><td>${esc(n)}</td><td>${hm(st.devices?.[n])}</td><td>${byDev[n]?.n || 0}</td><td>${yen(byDev[n]?.y || 0)}</td></tr>`).join('') || '<tr><td colspan="4">記録なし</td></tr>'}
+          </table>
           <h3>営業の記録</h3>
           <table>
             <tr><th>期間</th><th>会計</th><th>売上</th><th>準備金</th><th>差額</th></tr>
@@ -169,6 +180,7 @@ function renderShops() {
             ${cs.map(c => `<tr><td>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}</td><td>${c.count ?? ''}</td><td>${yen(c.sales)}</td><td>${yen(c.float)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}
           </table>
           <h3>会計の一覧（${ss.length}件）</h3>
+          ${st.ended ? '' : `<div class="adm-act" style="margin:12px 0"><button class="btn danger" data-end="${k}">このセッションを強制終了</button></div>`}
           ${ss.map(s => `
             <div class="adm-sale ${s.void || isDel(s) ? 'void' : ''}">
               <span>${hm(s.t)} ${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${isDel(s) ? `<span class="tag">${stOf(s) === 'requested' ? '削除リクエスト' : '削除済み'}</span>` : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}<br>${itemsText(s)}</span>
@@ -179,7 +191,7 @@ function renderShops() {
     return `
     <div class="box adm-shop" data-k="${k}">
       <div class="adm-head">
-        <div><b>${esc(label(k))}</b><span class="tag">${isOpen ? '営業中' : '締め済み'}</span><br>
+        <div><b>${esc(label(k))}</b><span class="tag">${status}</span><br>
           <span class="small">作成 ${hm(st.created || st.openedAt)}・端末 ${devs.length ? devs.map(esc).join('、') : '—'}</span></div>
         <div style="text-align:right"><b>${yen(total)}</b><br><span class="small">${live.length}件${dels ? `・削除 ${dels}件` : ''}</span></div>
       </div>
@@ -187,6 +199,27 @@ function renderShops() {
     </div>`;
   }).join('');
 }
+// 強制終了：全端末で使えなくなる（データは残る）。2回タップで実行
+$('#shopList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-end]');
+  if (!b) return;
+  e.stopPropagation();
+  if (!b.classList.contains('arm')) {
+    b.classList.add('arm');
+    b.textContent = 'もう一度タップで終了（元に戻せません）';
+    setTimeout(() => { if (b.isConnected) { b.classList.remove('arm'); b.textContent = 'このセッションを強制終了'; } }, 4000);
+    return;
+  }
+  const k = b.dataset.end;
+  const now = Date.now();
+  b.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'shops', k, 'meta', 'settings'), { ended: true, open: false, endedAt: now, endedBy: 'admin' }, { merge: true });
+    batch.set(doc(db, 'shops', k, 'adminlog', `${now.toString(36)}-end`), { action: 'end', t: now });
+    await batch.commit();
+  } catch (err) { b.disabled = false; b.textContent = 'できませんでした'; }
+});
 $('#shopList').addEventListener('click', e => {
   const card = e.target.closest('.adm-head');
   if (!card) return;
