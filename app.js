@@ -45,7 +45,7 @@ const db = initializeFirestore(initializeApp(firebaseConfig), {
 let shopKey = null;
 let device = '';
 let sales = [];
-let settings = { float: 0 };
+let settings = { float: 0, open: true, openedAt: 0 };
 let fromCache = true;
 let cart = {};
 let paidStr = '';
@@ -58,26 +58,44 @@ const salesCol = () => collection(db, 'shops', shopKey, 'sales');
 const settingsDoc = () => doc(db, 'shops', shopKey, 'meta', 'settings');
 
 /* ---------- ログイン ---------- */
-let pendingCreate = null;
+// 金種ごとの枚数入力欄（ログイン・集計で共用）
+const cashGrid = () => DENOMS.map(d => `<label>${d.toLocaleString()}円<input data-d="${d}" type="number" inputmode="numeric" min="0" placeholder="0"></label>`).join('');
+const readCounts = el => Object.fromEntries([...el.querySelectorAll('input[data-d]')].map(i => [i.dataset.d, Math.max(0, Math.floor(Number(i.value || 0)))]));
+const sumCounts = c => DENOMS.reduce((t, d) => t + d * (Number(c?.[d]) || 0), 0);
+
+let mode = 'join';
+$('#loginFloat').innerHTML = cashGrid();
+$('#loginFloat').addEventListener('input', () => { $('#loginFloatTotal').textContent = yen(sumCounts(readCounts($('#loginFloat')))); });
+document.querySelector('.seg').addEventListener('click', e => {
+  const m = e.target.dataset.m;
+  if (!m) return;
+  mode = m;
+  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  $('#newFloat').hidden = m !== 'new';
+  $('#passHint').textContent = m === 'new' ? '新しい合言葉を決めてください（ほかの部員にも伝えます）' : '部で決めた合言葉を入力してください';
+  $('#loginBtn').textContent = m === 'new' ? '作成して始める' : '始める';
+  $('#loginMsg').textContent = '';
+});
+
 $('#loginBtn').onclick = async () => {
   const pass = $('#pass').value.trim();
   const name = $('#devname').value.trim();
   const msg = $('#loginMsg');
-  if (pass.length < 4) { msg.textContent = '合言葉を入力してください'; return; }
+  if (pass.length < 2) { msg.textContent = '合言葉を入力してください'; return; }
   if (!name) { msg.textContent = '端末の名前を入力してください'; return; }
   const key = await keyOf(pass);
   msg.textContent = '確認中…';
   try {
-    if (pendingCreate === key) {
-      await setDoc(doc(db, 'shops', key, 'meta', 'settings'), { createdAt: serverTimestamp(), float: 0 });
-    } else {
-      const snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
-      if (!snap.exists()) {
-        pendingCreate = key;
-        msg.textContent = 'この合言葉の販売記録はまだありません。新しく作る場合はもう一度「はじめる」を押してください。';
-        $('#loginBtn').textContent = '新しく作ってはじめる';
-        return;
-      }
+    const ref = doc(db, 'shops', key, 'meta', 'settings');
+    const snap = await getDoc(ref);
+    if (mode === 'join' && !snap.exists()) {
+      msg.textContent = 'この合言葉は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
+      return;
+    }
+    if (mode === 'new') {
+      if (snap.exists()) { msg.textContent = 'この合言葉はすでに使われています。別の合言葉にしてください。'; return; }
+      const counts = readCounts($('#loginFloat'));
+      await setDoc(ref, { createdAt: serverTimestamp(), floatCounts: counts, float: sumCounts(counts), open: true, openedAt: Date.now() });
     }
   } catch (e) {
     msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
@@ -87,7 +105,6 @@ $('#loginBtn').onclick = async () => {
   store.set('pf.dev', name);
   start(key, name);
 };
-$('#pass').addEventListener('input', () => { pendingCreate = null; $('#loginBtn').textContent = 'はじめる'; });
 
 function start(key, name) {
   shopKey = key;
@@ -101,10 +118,12 @@ function start(key, name) {
       .sort((a, b) => b.t - a.t);
     renderSync();
     renderHist();
+    renderDels();
     renderSum();
   }, () => renderSync(true));
   onSnapshot(settingsDoc(), snap => {
-    settings = { float: 0, ...(snap.data() || {}) };
+    settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
+    renderOpen();
     renderSum();
   });
 }
@@ -238,9 +257,11 @@ document.querySelector('.tabs').addEventListener('click', e => {
 
 /* ---------- 履歴 ---------- */
 const hm = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// 削除済みは履歴・集計から外し、「削除履歴」にだけ出す
+const shown = () => sales.filter(s => !s.deleted);
 function renderHist() {
-  if (!sales.length) { $('#hist').innerHTML = '<div class="empty">まだ会計はありません</div>'; return; }
-  $('#hist').innerHTML = sales.map(s => `
+  if (!shown().length) { $('#hist').innerHTML = '<div class="empty">まだ会計はありません</div>'; return; }
+  $('#hist').innerHTML = shown().map(s => `
     <div class="sale ${s.void ? 'void' : ''} ${picked.has(s.id) ? 'picked' : ''}" data-sid="${s.id}">
       <span class="chk">${picked.has(s.id) ? '✓' : ''}</span>
       <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
@@ -293,6 +314,71 @@ function endSel() {
   renderSel();
   renderHist();
 }
+// 削除・復元は「削除済み」の印を切り替えるだけ。どちらもパスワードをサーバーで照合する
+async function setDeleted(ids, pw, deleted) {
+  const batch = writeBatch(db);
+  const now = Date.now();
+  for (const id of ids) {
+    const op = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
+    batch.set(doc(db, 'shops', shopKey, 'dellog', op), { pw, by: device, t: now, sale: id, deleted });
+    batch.update(doc(salesCol(), id), deleted
+      ? { deleted: true, delOp: op, delBy: device, delT: now }
+      : { deleted: false, delOp: op, restoredBy: device, restoredT: now });
+  }
+  await batch.commit();
+}
+
+let showDels = false;
+let restoreId = null;
+$('#delsBtn').onclick = () => {
+  showDels = !showDels;
+  $('#delsBtn').textContent = showDels ? '削除履歴を閉じる' : '削除履歴';
+  $('#delsList').hidden = !showDels;
+  $('#hist').hidden = showDels;
+  $('#selStart').hidden = showDels;
+  restoreId = null;
+  $('#restoreRow').hidden = true;
+  renderDels();
+};
+function renderDels() {
+  if (!showDels) return;
+  const ds = sales.filter(s => s.deleted).sort((a, b) => (b.delT || 0) - (a.delT || 0));
+  $('#delsList').innerHTML = ds.length ? ds.map(s => `
+    <div class="sale void ${s.id === restoreId ? 'picked' : ''}">
+      <div class="meta">${s.delT ? hm(s.delT) : ''} ${esc(s.delBy || '')} が削除（会計 ${hm(s.t)} ${esc(s.dev)}）</div>
+      <div class="act"><button data-rid="${s.id}">復元</button></div>
+      <div class="its">${Object.entries(s.items || {}).map(([id, q]) => `${esc(P[id]?.s || id)}×${q}`).join('、')}</div>
+      <div><div class="tot">${yen(s.total)}</div><div class="pay">預 ${yen(s.paid)}／釣 ${yen(s.change)}</div></div>
+    </div>`).join('') : '<div class="empty">削除された履歴はありません</div>';
+}
+$('#delsList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-rid]');
+  if (!b) return;
+  restoreId = b.dataset.rid;
+  $('#restoreRow').hidden = false;
+  $('#histMsg').textContent = '復元するには削除パスワードを入力してください';
+  $('#restorePw').focus();
+  renderDels();
+});
+$('#restorePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#restoreGo').click(); });
+$('#restoreGo').onclick = async () => {
+  const pw = $('#restorePw').value;
+  const msg = $('#histMsg');
+  if (!pw || !restoreId) return;
+  if (!navigator.onLine || fromCache) { msg.textContent = '復元は電波のある場所で行ってください'; return; }
+  $('#restoreGo').disabled = true;
+  try {
+    await setDeleted([restoreId], pw, false);
+    msg.textContent = '1件復元しました';
+    restoreId = null;
+    $('#restoreRow').hidden = true;
+  } catch (e) {
+    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '復元できませんでした（通信を確認してください）';
+  }
+  $('#restorePw').value = '';
+  $('#restoreGo').disabled = false;
+  renderDels();
+};
 $('#selStart').onclick = () => { selecting = true; $('#histMsg').textContent = ''; renderSel(); renderHist(); };
 $('#selCancel').onclick = endSel;
 $('#selDel').onclick = () => { $('#delPwRow').hidden = false; $('#delPw').focus(); };
@@ -307,13 +393,8 @@ $('#delGo').onclick = async () => {
   $('#delGo').disabled = true;
   msg.textContent = '削除中…';
   try {
-    const batch = writeBatch(db);
-    for (const id of ids) {
-      batch.set(doc(db, 'shops', shopKey, 'dellog', id), { pw, by: device, t: Date.now() });
-      batch.delete(doc(salesCol(), id));
-    }
-    await batch.commit();
-    msg.textContent = `${ids.length}件削除しました`;
+    await setDeleted(ids, pw, true);
+    msg.textContent = `${ids.length}件削除しました（削除履歴に残ります）`;
     endSel();
   } catch (e) {
     msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '削除できませんでした（通信を確認してください）';
@@ -337,13 +418,25 @@ function buildSum() {
     <div class="box"><h2>端末別</h2><div id="byDev"></div></div>
     <div class="box">
       <h2>締め（現金の確認）</h2>
-      <div class="row"><span>釣り銭準備金</span><input id="float" type="number" inputmode="numeric" min="0"></div>
-      <div class="cash">${DENOMS.map(d => `<label>${d.toLocaleString()}円<input data-d="${d}" type="number" inputmode="numeric" min="0" placeholder="0"></label>`).join('')}</div>
+      <div class="lbl">釣り銭準備金（開始時の枚数）</div>
+      <div id="floatCash" class="cash">${cashGrid()}</div>
+      <div class="row"><span>釣り銭準備金</span><b id="fTotal">¥0</b></div>
+      <div class="lbl" style="margin-top:12px">締めのときに数えた枚数</div>
+      <div id="countCash" class="cash">${cashGrid()}</div>
       <div class="row"><span>数えた現金</span><b id="cCounted">¥0</b></div>
       <div class="row"><span>あるはずの現金</span><b id="cExpected">¥0</b></div>
       <div class="row"><span>差額</span><span id="cDiff" class="diff">¥0</span></div>
-      <p class="small">あるはずの現金 ＝ 釣り銭準備金 ＋ 全端末の売上</p>
+      <p class="small">あるはずの現金 ＝ 釣り銭準備金 ＋ <span id="openedLbl">開始</span>からの売上（全端末）</p>
+      <div id="closeArea">
+        <button id="closeStart" class="btn danger big">締める</button>
+        <div id="closePwRow" class="selrow" hidden style="margin-top:8px">
+          <input id="closePw" type="password" inputmode="numeric" autocomplete="off" placeholder="締めのパスワード">
+          <button id="closeGo" class="btn danger">締める</button>
+        </div>
+        <p id="closeMsg" class="small"></p>
+      </div>
     </div>
+    <div class="box"><h2>締めの記録</h2><div id="closeList" class="small">まだありません</div></div>
     <div class="box">
       <h2>その他</h2>
       <div class="tools">
@@ -352,11 +445,17 @@ function buildSum() {
       </div>
       <p class="small" id="logoutNote"></p>
     </div>`;
-  $('#float').onchange = e => {
-    const v = Math.max(0, Number(e.target.value || 0));
-    setDoc(settingsDoc(), { float: v }, { merge: true }).catch(() => renderSync(true));
-  };
-  document.querySelector('.cash').addEventListener('input', e => { cash[e.target.dataset.d] = Number(e.target.value || 0); renderCash(); });
+  // 準備金は全端末で共有。入力のたびに保存（端末内には即時反映）
+  $('#floatCash').addEventListener('input', () => {
+    const counts = readCounts($('#floatCash'));
+    settings = { ...settings, floatCounts: counts, float: sumCounts(counts) };
+    setDoc(settingsDoc(), { floatCounts: counts, float: sumCounts(counts) }, { merge: true }).catch(() => renderSync(true));
+    renderCash();
+  });
+  $('#countCash').addEventListener('input', e => { cash[e.target.dataset.d] = Number(e.target.value || 0); renderCash(); });
+  $('#closeStart').onclick = () => { $('#closePwRow').hidden = false; $('#closePw').focus(); };
+  $('#closePw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#closeGo').click(); });
+  $('#closeGo').onclick = doClose;
   $('#csvBtn').onclick = downloadCsv;
   $('#logoutBtn').onclick = () => {
     const pend = sales.filter(s => s.pending).length;
@@ -369,12 +468,14 @@ function buildSum() {
     location.reload();
   };
   sumBuilt = true;
+  renderOpen();
+  renderCloses();
 }
 
 function renderSum() {
   if (!shopKey) return;
   if (!sumBuilt) buildSum();
-  const live = sales.filter(s => !s.void);
+  const live = sales.filter(s => !s.void && !s.deleted);
   const sold = {};
   let items = 0;
   live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; items += q; }));
@@ -400,15 +501,18 @@ function renderSum() {
   $('#byDev').innerHTML = `<table><tr><th>端末</th><th>会計数</th><th>売上</th></tr>${
     names.map(n => `<tr><td>${esc(n)}</td><td>${devs[n]?.n || 0}</td><td>${yen(devs[n]?.y || 0)}</td></tr>`).join('')}</table>`;
 
-  const fl = $('#float');
-  if (document.activeElement !== fl) fl.value = settings.float ?? 0;
+  // 自分が入力中の欄は上書きしない
+  if (!$('#floatCash').contains(document.activeElement)) {
+    $('#floatCash').querySelectorAll('input').forEach(i => { const n = Number(settings.floatCounts?.[i.dataset.d] || 0); i.value = n ? n : ''; });
+  }
   renderCash();
 }
 
 function renderCash() {
+  $('#fTotal').textContent = yen(settings.float || 0);
   const counted = DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0);
-  const expected = Number(settings.float || 0) +
-    sales.filter(s => !s.void).reduce((t, s) => t + s.total, 0);
+  const expected = Number(settings.float || 0) + sessionSales().reduce((t, s) => t + s.total, 0);
+  $('#openedLbl').textContent = settings.openedAt ? `開始（${hm(settings.openedAt)}）` : '開始';
   const diff = counted - expected;
   $('#cCounted').textContent = yen(counted);
   $('#cExpected').textContent = yen(expected);
@@ -417,13 +521,92 @@ function renderCash() {
   el.className = 'diff ' + (diff === 0 ? 'ok' : 'ng');
 }
 
+/* ---------- 締める・開ける ---------- */
+// 締めのパスワードはサーバーのルールで照合する（このコードには書かない）
+const sessionSales = () => sales.filter(s => !s.void && !s.deleted && s.t >= (settings.openedAt || 0));
+let closes = [];
+let closesOn = false;
+
+async function doClose() {
+  const pw = $('#closePw').value;
+  const msg = $('#closeMsg');
+  if (!pw) return;
+  if (!navigator.onLine || fromCache) { msg.textContent = '締めは電波のある場所で行ってください'; return; }
+  if (sales.some(s => s.pending)) { msg.textContent = '未送信の会計があります。送信が終わってから締めてください'; return; }
+  const counted = DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0);
+  const ss = sessionSales();
+  const total = ss.reduce((t, s) => t + s.total, 0);
+  const expected = Number(settings.float || 0) + total;
+  const now = Date.now();
+  const cid = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
+  $('#closeGo').disabled = true;
+  msg.textContent = '締めています…';
+  try {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'shops', shopKey, 'closeauth', cid), { pw, by: device, t: now });
+    batch.set(doc(db, 'shops', shopKey, 'closes', cid), {
+      openedAt: settings.openedAt || 0, closedAt: now, by: device,
+      float: Number(settings.float || 0), floatCounts: settings.floatCounts || {},
+      sales: total, count: ss.length, expected, counted, countCounts: { ...cash }, diff: counted - expected,
+    });
+    batch.set(settingsDoc(), { open: false, closeId: cid, closedAt: now }, { merge: true });
+    await batch.commit();
+    msg.textContent = '';
+    $('#closePw').value = '';
+    $('#closePwRow').hidden = true;
+    DENOMS.forEach(d => { cash[d] = 0; });
+    document.querySelectorAll('#countCash input').forEach(i => { i.value = ''; });
+  } catch (e) {
+    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '締められませんでした（通信を確認してください）';
+    $('#closePw').value = '';
+  }
+  $('#closeGo').disabled = false;
+}
+
+$('#openCash').innerHTML = cashGrid();
+$('#openCash').addEventListener('input', () => { $('#openTotal').textContent = yen(sumCounts(readCounts($('#openCash')))); });
+$('#openBtn').onclick = () => {
+  const counts = readCounts($('#openCash'));
+  const v = { open: true, openedAt: Date.now(), floatCounts: counts, float: sumCounts(counts) };
+  settings = { ...settings, ...v };
+  setDoc(settingsDoc(), v, { merge: true }).catch(() => renderSync(true));
+  document.querySelectorAll('#openCash input').forEach(i => { i.value = ''; });
+  $('#openTotal').textContent = '¥0';
+  renderOpen();
+  renderSum();
+};
+
+function renderOpen() {
+  const closed = settings.open === false;
+  $('#v-reg').classList.toggle('closed', closed);
+  $('#closedPanel').hidden = !closed;
+  if (closed) $('#closedAt').textContent = settings.closedAt ? `${hm(settings.closedAt)} に締めました。次に始めるときは、釣り銭の枚数を入れて「開ける」を押してください。` : '';
+  if (sumBuilt) {
+    $('#closeArea').hidden = closed;
+    $('#floatCash').querySelectorAll('input').forEach(i => { i.disabled = closed; });
+  }
+  if (!closesOn && shopKey) {
+    closesOn = true;
+    onSnapshot(collection(db, 'shops', shopKey, 'closes'), snap => {
+      closes = snap.docs.map(d => d.data()).sort((a, b) => b.closedAt - a.closedAt);
+      renderCloses();
+    });
+  }
+}
+
+function renderCloses() {
+  if (!sumBuilt) return;
+  $('#closeList').innerHTML = closes.length ? `<table class="closes"><tr><th>締め</th><th>売上</th><th>あるはず</th><th>数えた</th><th>差額</th></tr>${
+    closes.map(c => `<tr><td>${hm(c.closedAt)}<br>${esc(c.by)}</td><td>${yen(c.sales)}</td><td>${yen(c.expected)}</td><td>${yen(c.counted)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}</table>` : 'まだありません';
+}
+
 function downloadCsv() {
   const head = ['日時', '端末', '状態', ...PRODUCTS.map(p => p.s), '合計', '預かり', 'お釣り'];
   const lines = [...sales].reverse().map(s => {
     const d = new Date(s.t);
     return [
       `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.toTimeString().slice(0, 8)}`,
-      s.dev, s.void ? '取消' : '', ...PRODUCTS.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
+      s.dev, s.deleted ? '削除' : s.void ? '取消' : '', ...PRODUCTS.map(p => s.items?.[p.id] || ''), s.total, s.paid, s.change,
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv' });
