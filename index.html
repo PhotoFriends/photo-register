@@ -46,6 +46,21 @@
 
   <!-- 履歴 -->
   <main id="v-hist" class="view" hidden>
+    <div class="histbar">
+      <div id="histNormal"><button id="selStart" class="btn">選択して削除</button></div>
+      <div id="histSel" hidden>
+        <div class="selrow">
+          <span id="selCount">0件選択中</span>
+          <button id="selCancel" class="btn ghost">キャンセル</button>
+          <button id="selDel" class="btn danger" disabled>削除</button>
+        </div>
+        <div id="delPwRow" class="selrow" hidden>
+          <input id="delPw" type="password" inputmode="numeric" autocomplete="off" placeholder="削除パスワード">
+          <button id="delGo" class="btn danger">削除する</button>
+        </div>
+      </div>
+      <p id="histMsg" class="small"></p>
+    </div>
     <div id="hist" class="list"></div>
   </main>
 

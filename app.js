@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp,
+  collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -241,7 +241,8 @@ const hm = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate
 function renderHist() {
   if (!sales.length) { $('#hist').innerHTML = '<div class="empty">まだ会計はありません</div>'; return; }
   $('#hist').innerHTML = sales.map(s => `
-    <div class="sale ${s.void ? 'void' : ''}">
+    <div class="sale ${s.void ? 'void' : ''} ${picked.has(s.id) ? 'picked' : ''}" data-sid="${s.id}">
+      <span class="chk">${picked.has(s.id) ? '✓' : ''}</span>
       <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
       <div class="act"><button data-id="${s.id}">${s.void ? '取消を戻す' : '取消'}</button></div>
       <div class="its">${Object.entries(s.items || {}).map(([id, q]) => `${esc(P[id]?.s || id)}×${q}`).join('、')}</div>
@@ -250,6 +251,15 @@ function renderHist() {
 }
 // 取消は2回タップ（誤操作防止）
 $('#hist').addEventListener('click', e => {
+  if (selecting) {
+    const card = e.target.closest('.sale');
+    if (!card) return;
+    const id = card.dataset.sid;
+    picked.has(id) ? picked.delete(id) : picked.add(id);
+    renderSel();
+    renderHist();
+    return;
+  }
   const b = e.target.closest('button[data-id]');
   if (!b) return;
   if (!b.classList.contains('arm')) {
@@ -262,6 +272,55 @@ $('#hist').addEventListener('click', e => {
   const s = sales.find(x => x.id === b.dataset.id);
   if (s) updateDoc(doc(salesCol(), s.id), { void: !s.void, voidBy: device, voidT: Date.now() }).catch(() => renderSync(true));
 });
+
+/* ---------- 選択して削除 ---------- */
+// パスワードはサーバーのルールで照合する（このコードには書かない）
+let selecting = false;
+const picked = new Set();
+function renderSel() {
+  $('#hist').classList.toggle('selecting', selecting);
+  $('#histNormal').hidden = selecting;
+  $('#histSel').hidden = !selecting;
+  $('#selCount').textContent = `${picked.size}件選択中`;
+  $('#selDel').disabled = !picked.size;
+  if (!picked.size) $('#delPwRow').hidden = true;
+}
+function endSel() {
+  selecting = false;
+  picked.clear();
+  $('#delPw').value = '';
+  $('#delPwRow').hidden = true;
+  renderSel();
+  renderHist();
+}
+$('#selStart').onclick = () => { selecting = true; $('#histMsg').textContent = ''; renderSel(); renderHist(); };
+$('#selCancel').onclick = endSel;
+$('#selDel').onclick = () => { $('#delPwRow').hidden = false; $('#delPw').focus(); };
+$('#delPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#delGo').click(); });
+$('#delGo').onclick = async () => {
+  const pw = $('#delPw').value;
+  const ids = [...picked];
+  if (!pw || !ids.length) return;
+  const msg = $('#histMsg');
+  // オフラインだとパスワードの照合ができないので、通信できるときだけ
+  if (!navigator.onLine || fromCache) { msg.textContent = '削除は電波のある場所で行ってください'; return; }
+  $('#delGo').disabled = true;
+  msg.textContent = '削除中…';
+  try {
+    const batch = writeBatch(db);
+    for (const id of ids) {
+      batch.set(doc(db, 'shops', shopKey, 'dellog', id), { pw, by: device, t: Date.now() });
+      batch.delete(doc(salesCol(), id));
+    }
+    await batch.commit();
+    msg.textContent = `${ids.length}件削除しました`;
+    endSel();
+  } catch (e) {
+    msg.textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '削除できませんでした（通信を確認してください）';
+    $('#delPw').value = '';
+  }
+  $('#delGo').disabled = false;
+};
 
 /* ---------- 集計 ---------- */
 let sumBuilt = false;

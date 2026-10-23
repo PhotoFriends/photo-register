@@ -156,6 +156,26 @@ input { font: inherit; }
 .sale.void .tot { text-decoration: line-through; }
 .tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #eee; margin-left: 6px; }
 .tag.pend { background: #fff1c2; }
+.btn.danger { background: var(--warn); color: #fff; border-color: var(--warn); }
+.histbar { padding: 12px 12px 0; }
+.histbar .small { margin: 6px 0 0; min-height: 1em; }
+.selrow { display: flex; gap: 8px; align-items: center; }
+.selrow + .selrow { margin-top: 8px; }
+.selrow span { flex: 1; font-weight: 600; }
+.selrow input {
+  flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--ink); -webkit-user-select: text; user-select: text;
+}
+.sale { position: relative; }
+.list.selecting .sale { padding-left: 48px; cursor: pointer; }
+.list.selecting .sale .act { visibility: hidden; }
+.sale .chk { display: none; }
+.list.selecting .sale .chk {
+  display: grid; place-items: center; position: absolute; left: 12px; top: 50%; margin-top: -13px; width: 26px; height: 26px;
+  border: 2px solid var(--line); border-radius: 7px; font-weight: 800; color: #fff;
+}
+.list.selecting .sale.picked { outline: 2px solid var(--warn); }
+.list.selecting .sale.picked .chk { background: var(--warn); border-color: var(--warn); }
 .empty { text-align: center; color: var(--sub); padding: 40px 0; }
 
 /* 集計 */
