@@ -1,9 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
 import {
-  getFirestore, collectionGroup, doc, getDoc, setDoc, onSnapshot, writeBatch,
+  getFirestore, collectionGroup, doc, getDocFromServer, setDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS } from './common.js?v=13';
+import { firebaseConfig, PRODUCTS } from './common.js?v=14';
 
 const P = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
 const $ = s => document.querySelector(s);
@@ -22,10 +22,13 @@ const db = getFirestore(app);
 // ID・パスワードはサーバーのルールで照合する（このコードには書かない）
 const adminDoc = uid => doc(db, 'admins', uid);
 let started = false;
+let loggingIn = false;
+// 管理者かどうかは必ずサーバーに確認する（端末内の未確定の書き込みでは判断しない）
 onAuthStateChanged(auth, async user => {
+  if (loggingIn) return;
   if (user) {
     try {
-      if ((await getDoc(adminDoc(user.uid))).exists()) { showApp(); return; }
+      if ((await getDocFromServer(adminDoc(user.uid))).exists()) { showApp(); return; }
     } catch {}
   }
   $('#login').hidden = false;
@@ -37,9 +40,11 @@ $('#loginBtn').onclick = async () => {
   const msg = $('#loginMsg');
   if (!id || !pw) { msg.textContent = 'User ID とパスワードを入力してください'; return; }
   msg.textContent = '確認中…';
+  loggingIn = true;
   try {
     const cred = auth.currentUser ? { user: auth.currentUser } : await signInAnonymously(auth);
     await setDoc(adminDoc(cred.user.uid), { id, pw, t: Date.now() });
+    if (!(await getDocFromServer(adminDoc(cred.user.uid))).exists()) throw { code: 'permission-denied' };
     msg.textContent = '';
     showApp();
   } catch (e) {
@@ -48,6 +53,7 @@ $('#loginBtn').onclick = async () => {
       : '通信できませんでした';
     $('#pw').value = '';
   }
+  loggingIn = false;
 };
 $('#logoutBtn').onclick = async () => { await signOut(auth); location.reload(); };
 
@@ -78,6 +84,8 @@ function showApp() {
   }, err => showErr(err));
 }
 function showErr(err) {
+  // 権限がない（管理者でない）ときはログイン画面に戻す
+  if (err.code === 'permission-denied') { $('#app').hidden = true; $('#login').hidden = false; started = false; return; }
   $('#reqList').innerHTML = `<div class="empty">読み込めませんでした（${esc(err.code || err.message)}）</div>`;
 }
 const label = key => shops[key]?.label || `（名前なし ${key.slice(0, 6)}）`;
