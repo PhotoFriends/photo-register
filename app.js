@@ -45,7 +45,7 @@ const db = initializeFirestore(initializeApp(firebaseConfig), {
 let shopKey = null;
 let device = '';
 let sales = [];
-let settings = { floats: {} };
+let settings = { float: 0 };
 let fromCache = true;
 let cart = {};
 let paidStr = '';
@@ -69,7 +69,7 @@ $('#loginBtn').onclick = async () => {
   msg.textContent = '確認中…';
   try {
     if (pendingCreate === key) {
-      await setDoc(doc(db, 'shops', key, 'meta', 'settings'), { createdAt: serverTimestamp(), floats: {} });
+      await setDoc(doc(db, 'shops', key, 'meta', 'settings'), { createdAt: serverTimestamp(), float: 0 });
     } else {
       const snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
       if (!snap.exists()) {
@@ -104,7 +104,7 @@ function start(key, name) {
     renderSum();
   }, () => renderSync(true));
   onSnapshot(settingsDoc(), snap => {
-    settings = { floats: {}, ...(snap.data() || {}) };
+    settings = { float: 0, ...(snap.data() || {}) };
     renderSum();
   });
 }
@@ -265,7 +265,6 @@ $('#hist').addEventListener('click', e => {
 
 /* ---------- 集計 ---------- */
 let sumBuilt = false;
-let cashDev = null;
 const cash = {};
 
 function buildSum() {
@@ -279,13 +278,12 @@ function buildSum() {
     <div class="box"><h2>端末別</h2><div id="byDev"></div></div>
     <div class="box">
       <h2>締め（現金の確認）</h2>
-      <div class="row"><span>端末</span><select id="cashDev"></select></div>
       <div class="row"><span>釣り銭準備金</span><input id="float" type="number" inputmode="numeric" min="0"></div>
       <div class="cash">${DENOMS.map(d => `<label>${d.toLocaleString()}円<input data-d="${d}" type="number" inputmode="numeric" min="0" placeholder="0"></label>`).join('')}</div>
       <div class="row"><span>数えた現金</span><b id="cCounted">¥0</b></div>
       <div class="row"><span>あるはずの現金</span><b id="cExpected">¥0</b></div>
       <div class="row"><span>差額</span><span id="cDiff" class="diff">¥0</span></div>
-      <p class="small">あるはずの現金 ＝ 釣り銭準備金 ＋ その端末の売上</p>
+      <p class="small">あるはずの現金 ＝ 釣り銭準備金 ＋ 全端末の売上</p>
     </div>
     <div class="box">
       <h2>その他</h2>
@@ -295,10 +293,9 @@ function buildSum() {
       </div>
       <p class="small" id="logoutNote"></p>
     </div>`;
-  $('#cashDev').onchange = e => { cashDev = e.target.value; DENOMS.forEach(d => { cash[d] = 0; }); document.querySelectorAll('.cash input').forEach(i => { i.value = ''; }); renderSum(); };
   $('#float').onchange = e => {
     const v = Math.max(0, Number(e.target.value || 0));
-    setDoc(settingsDoc(), { floats: { [cashDev]: v } }, { merge: true }).catch(() => renderSync(true));
+    setDoc(settingsDoc(), { float: v }, { merge: true }).catch(() => renderSync(true));
   };
   document.querySelector('.cash').addEventListener('input', e => { cash[e.target.dataset.d] = Number(e.target.value || 0); renderCash(); });
   $('#csvBtn').onclick = downloadCsv;
@@ -340,23 +337,19 @@ function renderSum() {
 
   const devs = {};
   live.forEach(s => { devs[s.dev] = devs[s.dev] || { n: 0, y: 0 }; devs[s.dev].n++; devs[s.dev].y += s.total; });
-  const names = [...new Set([device, ...Object.keys(devs), ...Object.keys(settings.floats || {})])];
+  const names = [...new Set([device, ...Object.keys(devs)])];
   $('#byDev').innerHTML = `<table><tr><th>端末</th><th>会計数</th><th>売上</th></tr>${
     names.map(n => `<tr><td>${esc(n)}</td><td>${devs[n]?.n || 0}</td><td>${yen(devs[n]?.y || 0)}</td></tr>`).join('')}</table>`;
 
-  if (!cashDev) cashDev = device;
-  const sel = $('#cashDev');
-  sel.innerHTML = names.map(n => `<option ${n === cashDev ? 'selected' : ''}>${esc(n)}</option>`).join('');
-  sel.value = cashDev;
   const fl = $('#float');
-  if (document.activeElement !== fl) fl.value = settings.floats?.[cashDev] ?? 0;
+  if (document.activeElement !== fl) fl.value = settings.float ?? 0;
   renderCash();
 }
 
 function renderCash() {
   const counted = DENOMS.reduce((t, d) => t + d * (cash[d] || 0), 0);
-  const expected = Number(settings.floats?.[cashDev] || 0) +
-    sales.filter(s => !s.void && s.dev === cashDev).reduce((t, s) => t + s.total, 0);
+  const expected = Number(settings.float || 0) +
+    sales.filter(s => !s.void).reduce((t, s) => t + s.total, 0);
   const diff = counted - expected;
   $('#cCounted').textContent = yen(counted);
   $('#cExpected').textContent = yen(expected);
