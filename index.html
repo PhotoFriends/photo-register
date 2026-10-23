@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -16,23 +16,28 @@
 <section id="login" class="login" hidden>
   <div class="login-box">
     <h1>フォトフレンズ<br>販売記録</h1>
-    <div class="seg">
-      <button data-m="join" class="on">始める</button>
-      <button data-m="new">新しく始める</button>
+    <div id="step1" class="login-box">
+      <div class="seg">
+        <button data-m="join" class="on">始める</button>
+        <button data-m="new">新しく始める</button>
+      </div>
+      <label>合言葉
+        <input id="pass" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <span id="passHint" class="small">部で決めた合言葉を入力してください</span>
+      </label>
+      <label>この端末の名前
+        <input id="devname" type="text" placeholder="例：1号機" maxlength="12">
+      </label>
+      <button id="loginBtn" class="btn primary">始める</button>
     </div>
-    <label>合言葉
-      <input id="pass" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <span id="passHint" class="small">部で決めた合言葉を入力してください</span>
-    </label>
-    <label>この端末の名前
-      <input id="devname" type="text" placeholder="例：1号機" maxlength="12">
-    </label>
-    <div id="newFloat" hidden>
-      <div class="lbl">釣り銭準備金（開始時の枚数）</div>
+    <div id="step2" class="login-box" hidden>
+      <h2 class="step-h">釣り銭準備金を入力</h2>
+      <p class="small">開始時にお金を入れる箱の中身を、種類ごとの枚数で入力してください。</p>
       <div id="loginFloat" class="cash"></div>
       <div class="row"><span>合計</span><b id="loginFloatTotal">¥0</b></div>
+      <button id="createBtn" class="btn primary" disabled>開始する</button>
+      <button id="backBtn1" class="btn ghost">戻る</button>
     </div>
-    <button id="loginBtn" class="btn primary">始める</button>
     <p id="loginMsg" class="msg"></p>
   </div>
 </section>
@@ -138,6 +143,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

@@ -64,16 +64,21 @@ const readCounts = el => Object.fromEntries([...el.querySelectorAll('input[data-
 const sumCounts = c => DENOMS.reduce((t, d) => t + d * (Number(c?.[d]) || 0), 0);
 
 let mode = 'join';
+let newKey = null;
 $('#loginFloat').innerHTML = cashGrid();
-$('#loginFloat').addEventListener('input', () => { $('#loginFloatTotal').textContent = yen(sumCounts(readCounts($('#loginFloat')))); });
+// 釣り銭準備金を入れないと開始できない
+$('#loginFloat').addEventListener('input', () => {
+  const v = sumCounts(readCounts($('#loginFloat')));
+  $('#loginFloatTotal').textContent = yen(v);
+  $('#createBtn').disabled = v <= 0;
+});
 document.querySelector('.seg').addEventListener('click', e => {
   const m = e.target.dataset.m;
   if (!m) return;
   mode = m;
   document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
-  $('#newFloat').hidden = m !== 'new';
   $('#passHint').textContent = m === 'new' ? '新しい合言葉を決めてください（ほかの部員にも伝えます）' : '部で決めた合言葉を入力してください';
-  $('#loginBtn').textContent = m === 'new' ? '作成して始める' : '始める';
+  $('#loginBtn').textContent = m === 'new' ? '次へ（釣り銭の入力）' : '始める';
   $('#loginMsg').textContent = '';
 });
 
@@ -86,25 +91,49 @@ $('#loginBtn').onclick = async () => {
   const key = await keyOf(pass);
   msg.textContent = '確認中…';
   try {
-    const ref = doc(db, 'shops', key, 'meta', 'settings');
-    const snap = await getDoc(ref);
+    const snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
     if (mode === 'join' && !snap.exists()) {
       msg.textContent = 'この合言葉は見つかりません。新しく始める場合は「新しく始める」を選んでください。';
       return;
     }
     if (mode === 'new') {
       if (snap.exists()) { msg.textContent = 'この合言葉はすでに使われています。別の合言葉にしてください。'; return; }
-      const counts = readCounts($('#loginFloat'));
-      await setDoc(ref, { createdAt: serverTimestamp(), floatCounts: counts, float: sumCounts(counts), open: true, openedAt: Date.now() });
+      newKey = key;
+      msg.textContent = '';
+      $('#step1').hidden = true;
+      $('#step2').hidden = false;
+      return;
     }
   } catch (e) {
     msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
     return;
   }
+  enter(key, name);
+};
+$('#backBtn1').onclick = () => { $('#step2').hidden = true; $('#step1').hidden = false; $('#loginMsg').textContent = ''; };
+$('#createBtn').onclick = async () => {
+  const counts = readCounts($('#loginFloat'));
+  const float = sumCounts(counts);
+  const msg = $('#loginMsg');
+  if (float <= 0 || !newKey) return;
+  $('#createBtn').disabled = true;
+  msg.textContent = '作成中…';
+  try {
+    const ref = doc(db, 'shops', newKey, 'meta', 'settings');
+    if ((await getDoc(ref)).exists()) { msg.textContent = 'この合言葉はすでに使われています。戻って別の合言葉にしてください。'; return; }
+    await setDoc(ref, { createdAt: serverTimestamp(), floatCounts: counts, float, open: true, openedAt: Date.now() });
+  } catch (e) {
+    msg.textContent = '通信できませんでした。電波のある場所でもう一度試してください。';
+    $('#createBtn').disabled = false;
+    return;
+  }
+  enter(newKey, $('#devname').value.trim());
+};
+function enter(key, name) {
   store.set('pf.key', key);
   store.set('pf.dev', name);
   start(key, name);
-};
+}
 
 function start(key, name) {
   shopKey = key;
@@ -564,14 +593,21 @@ async function doClose() {
 }
 
 $('#openCash').innerHTML = cashGrid();
-$('#openCash').addEventListener('input', () => { $('#openTotal').textContent = yen(sumCounts(readCounts($('#openCash')))); });
+$('#openCash').addEventListener('input', () => {
+  const v = sumCounts(readCounts($('#openCash')));
+  $('#openTotal').textContent = yen(v);
+  $('#openBtn').disabled = v <= 0;
+});
+$('#openBtn').disabled = true;
 $('#openBtn').onclick = () => {
   const counts = readCounts($('#openCash'));
+  if (sumCounts(counts) <= 0) return;
   const v = { open: true, openedAt: Date.now(), floatCounts: counts, float: sumCounts(counts) };
   settings = { ...settings, ...v };
   setDoc(settingsDoc(), v, { merge: true }).catch(() => renderSync(true));
   document.querySelectorAll('#openCash input').forEach(i => { i.value = ''; });
   $('#openTotal').textContent = '¥0';
+  $('#openBtn').disabled = true;
   renderOpen();
   renderSum();
 };
