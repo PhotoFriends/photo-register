@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="フォトフレンズ レジ">
+<meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
-<title>フォトフレンズ レジ</title>
+<title>フォトフレンズ 販売記録</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,12 +15,12 @@
 <!-- ログイン -->
 <section id="login" class="login" hidden>
   <div class="login-box">
-    <h1>フォトフレンズ<br>レジ</h1>
+    <h1>フォトフレンズ<br>販売記録</h1>
     <label>合言葉
       <input id="pass" type="password" autocomplete="current-password">
     </label>
     <label>この端末の名前
-      <input id="devname" type="text" placeholder="例：レジ1" maxlength="12">
+      <input id="devname" type="text" placeholder="例：1号機" maxlength="12">
     </label>
     <button id="loginBtn" class="btn primary">はじめる</button>
     <p id="loginMsg" class="msg"></p>
@@ -30,11 +30,11 @@
 <!-- 本体 -->
 <div id="app" hidden>
   <header class="top">
-    <div class="title">フォトフレンズ レジ</div>
+    <div class="title">フォトフレンズ 販売記録</div>
     <div id="sync" class="sync"><span class="dot"></span><span id="syncText">接続中</span></div>
   </header>
 
-  <!-- レジ -->
+  <!-- 会計 -->
   <main id="v-reg" class="view">
     <div id="grid" class="grid"></div>
     <div class="cartbar">
@@ -55,7 +55,7 @@
   </main>
 
   <nav class="tabs">
-    <button data-v="reg" class="on">レジ</button>
+    <button data-v="reg" class="on">会計</button>
     <button data-v="hist">履歴</button>
     <button data-v="sum">集計</button>
   </nav>

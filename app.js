@@ -74,7 +74,7 @@ $('#loginBtn').onclick = async () => {
       const snap = await getDoc(doc(db, 'shops', key, 'meta', 'settings'));
       if (!snap.exists()) {
         pendingCreate = key;
-        msg.textContent = 'この合言葉のレジはまだありません。新しく作る場合はもう一度「はじめる」を押してください。';
+        msg.textContent = 'この合言葉の販売記録はまだありません。新しく作る場合はもう一度「はじめる」を押してください。';
         $('#loginBtn').textContent = '新しく作ってはじめる';
         return;
       }
@@ -124,7 +124,7 @@ function renderSync(err) {
 addEventListener('online', () => renderSync());
 addEventListener('offline', () => renderSync());
 
-/* ---------- レジ ---------- */
+/* ---------- 会計 ---------- */
 function renderGrid() {
   $('#grid').innerHTML = PRODUCTS.map(p => `
     <button class="item" data-id="${p.id}">
@@ -278,7 +278,7 @@ function buildSum() {
     <div class="box"><h2>商品別</h2><div id="byProd"></div></div>
     <div class="box"><h2>端末別</h2><div id="byDev"></div></div>
     <div class="box">
-      <h2>レジ締め（現金の確認）</h2>
+      <h2>締め（現金の確認）</h2>
       <div class="row"><span>端末</span><select id="cashDev"></select></div>
       <div class="row"><span>釣り銭準備金</span><input id="float" type="number" inputmode="numeric" min="0"></div>
       <div class="cash">${DENOMS.map(d => `<label>${d.toLocaleString()}円<input data-d="${d}" type="number" inputmode="numeric" min="0" placeholder="0"></label>`).join('')}</div>
