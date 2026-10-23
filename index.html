@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="フォトフレンズ レジ">
+<meta name="theme-color" content="#ffffff">
+<title>フォトフレンズ レジ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ログイン -->
+<section id="login" class="login" hidden>
+  <div class="login-box">
+    <h1>フォトフレンズ<br>レジ</h1>
+    <label>合言葉
+      <input id="pass" type="password" autocomplete="current-password">
+    </label>
+    <label>この端末の名前
+      <input id="devname" type="text" placeholder="例：レジ1" maxlength="12">
+    </label>
+    <button id="loginBtn" class="btn primary">はじめる</button>
+    <p id="loginMsg" class="msg"></p>
+  </div>
+</section>
+
+<!-- 本体 -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="title">フォトフレンズ レジ</div>
+    <div id="sync" class="sync"><span class="dot"></span><span id="syncText">接続中</span></div>
+  </header>
+
+  <!-- レジ -->
+  <main id="v-reg" class="view">
+    <div id="grid" class="grid"></div>
+    <div class="cartbar">
+      <button id="clearBtn" class="btn ghost">クリア</button>
+      <div class="cartsum"><span id="cartCount">0点</span><b id="cartTotal">¥0</b></div>
+      <button id="payBtn" class="btn primary" disabled>お会計</button>
+    </div>
+  </main>
+
+  <!-- 履歴 -->
+  <main id="v-hist" class="view" hidden>
+    <div id="hist" class="list"></div>
+  </main>
+
+  <!-- 集計 -->
+  <main id="v-sum" class="view" hidden>
+    <div id="sum"></div>
+  </main>
+
+  <nav class="tabs">
+    <button data-v="reg" class="on">レジ</button>
+    <button data-v="hist">履歴</button>
+    <button data-v="sum">集計</button>
+  </nav>
+</div>
+
+<!-- お会計シート -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <button id="backBtn" class="btn ghost">戻る</button>
+      <span>お会計</span>
+      <span></span>
+    </div>
+    <div id="lines" class="lines"></div>
+    <div class="amt"><span>請求金額</span><b id="billAmt">¥0</b></div>
+    <div class="amt paid"><span>お預かり</span><b id="paidAmt">¥0</b></div>
+    <div class="amt change"><span id="changeLabel">お釣り</span><b id="changeAmt">—</b></div>
+    <div class="quick">
+      <button data-q="exact">ちょうど</button>
+      <button data-q="1000">¥1,000</button>
+      <button data-q="2000">¥2,000</button>
+      <button data-q="5000">¥5,000</button>
+      <button data-q="10000">¥10,000</button>
+    </div>
+    <div class="keys">
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="C" class="fn">C</button><button data-k="0">0</button><button data-k="00">00</button>
+    </div>
+    <button id="okBtn" class="btn primary big" disabled>会計を確定</button>
+  </div>
+</div>
+
+<!-- 完了表示 -->
+<div id="done" class="done" hidden>
+  <div class="done-box">
+    <div class="done-label">お釣り</div>
+    <div id="doneChange" class="done-amt">¥0</div>
+    <div id="doneSub" class="done-sub"></div>
+    <button id="nextBtn" class="btn primary big">次のお客様</button>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
