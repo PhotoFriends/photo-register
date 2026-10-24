@@ -281,3 +281,5 @@ tr.subtot td { font-weight: 700; background: var(--bg); }
 .cmp details { margin-top: 6px; }
 .cmp summary { cursor: pointer; color: var(--accent); font-weight: 600; }
 .cmp .diff { font-size: 14px; }
+.cmp.cancelled { opacity: .7; border-style: dashed; }
+tr.void td { opacity: .6; }

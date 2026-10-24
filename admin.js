@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML } from './common.js?v=25';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML } from './common.js?v=26';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -89,7 +89,7 @@ function showApp() {
     render();
   }, err => showErr(err));
   onSnapshot(collectionGroup(db, 'closes'), snap => {
-    closes = snap.docs.map(d => ({ key: keyOf(d.ref), ...d.data() })).sort((a, b) => b.closedAt - a.closedAt);
+    closes = snap.docs.map(d => ({ key: keyOf(d.ref), id: d.id, ...d.data() })).sort((a, b) => b.closedAt - a.closedAt);
     render();
   }, err => showErr(err));
 }
@@ -187,7 +187,9 @@ function renderShops() {
           <table>
             <tr><th>期間</th><th>会計</th><th>売上</th><th>準備金</th><th>差額</th></tr>
             ${isOpen ? `<tr><td>${hm(st.openedAt)} 〜 営業中</td><td>${cur.length}</td><td>${yen(curTotal)}</td><td>${yen(st.float)}</td><td>—</td></tr>` : ''}
-            ${cs.map(c => `<tr><td>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}</td><td>${c.count ?? ''}</td><td>${yen(c.sales)}</td><td>${yen(c.float)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}
+            ${cs.map(c => c.cancelled
+              ? `<tr class="void"><td>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}<span class="tag">取り消し</span></td><td colspan="4">${hm(c.cancelledAt)} に取り消し（数えたお金 ${yen(c.counted)}）</td></tr>`
+              : `<tr><td>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}</td><td>${c.count ?? ''}</td><td>${yen(c.sales)}</td><td>${yen(c.float)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}
           </table>
           <h3>売上高との比較（締めごと）</h3>
           ${cs.map(c => compareHTML(c, ss, hm)).join('') || '<div class="small">まだ締めていません</div>'}
@@ -195,6 +197,7 @@ function renderShops() {
           <h3>扱う商品（${Array.isArray(st.products) ? st.products.length : 'すべて'}）</h3>
           <div class="small">${(Array.isArray(st.products) ? st.products.map(id => P[id]) : activeProducts(catalog)).filter(Boolean).map(p => esc(p.s || p.name)).join('、') || 'なし'}</div>
           <div class="adm-act" style="margin:12px 0 0"><button class="btn primary" data-manual="${k}">記録されなかった会計を手入力</button></div>
+          ${!st.ended && !isOpen && cs.some(c => !c.cancelled && c.closedAt === st.closedAt) ? `<div class="adm-act" style="margin:12px 0 0"><button class="btn" data-uncl="${k}">最後の締めを取り消して営業を続ける</button></div>` : ''}
           ${st.ended ? '' : `<div class="adm-act" style="margin:12px 0">
             <button class="btn" data-prods="${k}">扱う商品を変える</button>
             <button class="btn danger" data-end="${k}">このセッションを強制終了</button></div>`}
@@ -217,6 +220,31 @@ function renderShops() {
   }).join('');
 }
 // 強制終了：全端末で使えなくなる（データは残る）。2回タップで実行
+// 最後の締めを取り消す：締めの記録は「取り消し」として残し、その締めの開始時点から営業を続ける。2回タップ
+$('#shopList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-uncl]');
+  if (!b) return;
+  e.stopPropagation();
+  if (!b.classList.contains('arm')) {
+    b.classList.add('arm');
+    b.textContent = 'もう一度タップで締めを取り消す';
+    setTimeout(() => { if (b.isConnected) { b.classList.remove('arm'); b.textContent = '最後の締めを取り消して営業を続ける'; } }, 4000);
+    return;
+  }
+  const k = b.dataset.uncl;
+  const st = shops[k];
+  const c = closes.find(x => x.key === k && !x.cancelled && x.closedAt === st.closedAt);
+  if (!c) return;
+  const now = Date.now();
+  b.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'shops', k, 'closes', c.id), { cancelled: true, cancelledAt: now });
+    batch.set(doc(db, 'shops', k, 'meta', 'settings'), { open: true, openedAt: c.openedAt, float: c.float, floatCounts: c.floatCounts || {} }, { merge: true });
+    batch.set(doc(db, 'shops', k, 'adminlog', `${now.toString(36)}-uncl`), { action: 'cancel-close', close: c.id, t: now });
+    await batch.commit();
+  } catch (err) { b.disabled = false; b.textContent = 'できませんでした'; }
+});
 $('#shopList').addEventListener('click', e => {
   const b = e.target.closest('button[data-manual]');
   if (!b) return;

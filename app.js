@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML } from './common.js?v=25';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML } from './common.js?v=26';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -814,7 +814,7 @@ function renderOpen() {
 
 // 締め済み画面に、直前の締めの結果（あるはずの現金・差額）を出す
 function renderLastClose() {
-  const c = closes.find(x => x.closedAt === settings.closedAt) || closes[0];
+  const c = closes.find(x => x.closedAt === settings.closedAt && !x.cancelled) || closes.find(x => !x.cancelled);
   const el = $('#lastClose');
   if (settings.open !== false || !c) { el.innerHTML = ''; return; }
   el.innerHTML = `<h2>売上高との比較</h2>${compareHTML(c, sales, hm)}`;

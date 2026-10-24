@@ -35,6 +35,12 @@ const signed = n => (n > 0 ? '+' : '') + (n < 0 ? '−' : '') + Math.abs(n);
 const isLive = s => !s.void && (s.delState || (s.deleted ? 'deleted' : 'none')) === 'none';
 const DEN_NAME = { 10000: '1万円札', 5000: '5千円札', 1000: '千円札', 500: '500円玉', 100: '100円玉', 50: '50円玉', 10: '10円玉', 5: '5円玉', 1: '1円玉' };
 export function compareHTML(c, sales, hm) {
+  // 取り消した締め：記録は残すが比較には使わない
+  if (c.cancelled) return `
+    <div class="cmp cancelled">
+      <div class="cmp-head"><b>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}</b><span class="tag">取り消し</span></div>
+      <p class="small">この締めは ${hm(c.cancelledAt)} に取り消され、営業を続けています。そのとき数えたお金は ${fmtYen(c.counted)} でした（比較には使っていません）。</p>
+    </div>`;
   const inPeriod = sales.filter(s => isLive(s) && s.t >= (c.openedAt || 0) && s.t <= c.closedAt);
   const salesNow = inPeriod.reduce((t, s) => t + s.total, 0);
   const fc = c.floatCounts || {}, cc = c.countCounts || {};
