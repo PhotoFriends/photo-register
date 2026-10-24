@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=28';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=29';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -15,7 +15,9 @@ const shownProducts = () => {
   return Array.isArray(ids) ? list.filter(p => ids.includes(p.id)) : list;
 };
 const genreOf = p => p.genre || CATS[p.cat] || 'その他';
-const stockProducts = () => shownProducts().filter(p => p.stock != null);
+// このセッションの最初の在庫（管理者が決めたもの。なければ商品に登録した在庫）
+const stockOf = p => settings?.startStock?.[p.id] ?? p.stock ?? null;
+const stockProducts = () => shownProducts().filter(p => stockOf(p) != null);
 
 const $ = s => document.querySelector(s);
 const yen = n => (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
@@ -682,7 +684,7 @@ function renderSum() {
     let cq = 0, cy = 0;
     ps.forEach(p => {
       const q = sold[p.id] || 0; cq += q; cy += soldYen[p.id] || 0;
-      rows += `<tr><td>${esc(p.s || p.name)}${p.archived ? '（削除済み）' : ''}</td><td>${q}</td><td>${p.stock != null ? p.stock - q : ''}</td><td>${yen(soldYen[p.id] || 0)}</td></tr>`;
+      rows += `<tr><td>${esc(p.s || p.name)}${p.archived ? '（削除済み）' : ''}</td><td>${q}</td><td>${stockOf(p) != null ? stockOf(p) - q : ''}</td><td>${yen(soldYen[p.id] || 0)}</td></tr>`;
     });
     if (ps.length > 1) rows += `<tr class="subtot"><td>${esc(c)} 計</td><td>${cq}</td><td></td><td>${yen(cy)}</td></tr>`;
   }
@@ -691,7 +693,7 @@ function renderSum() {
   // 締め済みの画面にも同じ表を出す（締めたあとに商品の残りを数えて確かめられるように）
   $('#closedStock').innerHTML = $('#byProd').innerHTML;
   // 残りの照合（理論上の残りと数えた残り）
-  const cmp = stockCmpHTML(listed.filter(p => p.stock != null), sold, settings.stockCount, hm);
+  const cmp = stockCmpHTML(listed.map(p => ({ ...p, stock: stockOf(p) })).filter(p => p.stock != null), sold, settings.stockCount, hm);
   $('#stockCmp').innerHTML = cmp;
   $('#closedStockCmp').innerHTML = cmp;
 

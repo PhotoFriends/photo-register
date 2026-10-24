@@ -1,9 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
 import {
-  getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
+  getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=28';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=29';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -198,7 +198,7 @@ function renderShops() {
             const sold = {};
             live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; }));
             const ids = new Set([...(Array.isArray(st.products) ? st.products : activeProducts(catalog).map(p => p.id)), ...Object.keys(sold)]);
-            const prods = [...catalog].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).filter(p => ids.has(p.id));
+            const prods = [...catalog].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).filter(p => ids.has(p.id)).map(p => ({ ...p, stock: st.startStock?.[p.id] ?? p.stock }));
             return stockCmpHTML(prods, sold, st.stockCount, hm);
           })()}
           <h3>会計の一覧（${ss.length}件）</h3>
@@ -207,7 +207,7 @@ function renderShops() {
           <div class="adm-act" style="margin:12px 0 0"><button class="btn primary" data-manual="${k}">記録されなかった会計を手入力</button></div>
           ${!st.ended && !isOpen && cs.some(c => !c.cancelled && c.closedAt === st.closedAt) ? `<div class="adm-act" style="margin:12px 0 0"><button class="btn" data-uncl="${k}">最後の締めを取り消して営業を続ける</button></div>` : ''}
           ${st.ended ? '' : `<div class="adm-act" style="margin:12px 0">
-            <button class="btn" data-prods="${k}">扱う商品を変える</button>
+            <button class="btn" data-prods="${k}">扱う商品・最初の在庫を変える</button>
             <button class="btn danger" data-end="${k}">このセッションを強制終了</button></div>`}
           ${ss.map(s => `
             <div class="adm-sale ${s.void || isDel(s) ? 'void' : ''}">
@@ -425,12 +425,24 @@ function openSessionSheet(key) {
   const st = key ? shops[key] : null;
   const list = activeProducts(catalog);
   const picked = new Set(st && Array.isArray(st.products) ? st.products : list.map(p => p.id));
+  // 最初の在庫の候補：一番最近に「数えた残り」が登録されたセッション
+  const latest = Object.entries(shops).filter(([k2, s2]) => k2 !== key && s2.stockCount?.counts && Object.keys(s2.stockCount.counts).length)
+    .sort((a, b) => b[1].stockCount.t - a[1].stockCount.t)[0];
+  const fromLatest = latest ? latest[1].stockCount.counts : null;
+  const startOf = p => (st?.startStock?.[p.id] ?? (key ? null : fromLatest?.[p.id]) ?? p.stock ?? '');
   $('#sheetBody').innerHTML = `
-    <div class="sheet-head"><button class="btn ghost" id="sBack">戻る</button><span>${key ? '扱う商品を変える' : '新しいセッション'}</span><span></span></div>
+    <div class="sheet-head"><button class="btn ghost" id="sBack">戻る</button><span>${key ? '扱う商品・最初の在庫' : '新しいセッション'}</span><span></span></div>
     <div class="form">
       ${key ? `<div class="row"><span>セッション名</span><b>${esc(label(key))}</b></div>` : '<label>セッション名（部員はこの名前を入力して参加します）<input id="sName" maxlength="40" autocapitalize="off" autocorrect="off" spellcheck="false"></label>'}
       <div class="row"><span>扱う商品（タップで選ぶ）</span><span><button class="btn ghost" id="sAll" style="padding:4px 8px">全部</button><button class="btn ghost" id="sNone" style="padding:4px 8px">なし</button></span></div>
       <div class="adm-grid" id="sGrid" style="padding:0"></div>
+      <div class="row"><span><b>最初の在庫</b></span></div>
+      <p class="small">このセッションの「残り」の計算に使います。${!key && latest ? `「${esc(label(latest[0]))}」で ${hm(latest[1].stockCount.t)} に数えた残りを入れてあります。` : ''}</p>
+      <div class="sheet-actions">
+        ${latest ? `<button class="btn" id="sFromCount">「${esc(label(latest[0]))}」の数えた残りを入れる</button>` : ''}
+        <button class="btn" id="sFromCat">商品の登録数を入れる</button>
+      </div>
+      <div class="scgrid" id="sStock"></div>
       <p id="sMsg" class="msg"></p>
       <button class="btn primary big" id="sSave">${key ? '保存' : '作成'}</button>
     </div>`;
@@ -438,6 +450,12 @@ function openSessionSheet(key) {
     $('#sGrid').innerHTML = list.map(p => `<div class="item pick ${picked.has(p.id) ? 'on' : ''}" data-pid="${p.id}">${card(p, '<span class="chk2">✓</span>')}</div>`).join('');
   };
   draw();
+  const drawStock = val => {
+    $('#sStock').innerHTML = list.map(p => `<label>${esc(p.s || p.name)}<input data-pid="${p.id}" type="number" inputmode="numeric" min="0" value="${val(p) ?? ''}"></label>`).join('');
+  };
+  drawStock(startOf);
+  if ($('#sFromCount')) $('#sFromCount').onclick = () => drawStock(p => fromLatest?.[p.id] ?? p.stock ?? '');
+  $('#sFromCat').onclick = () => drawStock(p => p.stock ?? '');
   sheet.hidden = false;
   $('#sBack').onclick = closeSheet;
   $('#sGrid').onclick = e => { const c = e.target.closest('.item'); if (!c) return; const id = c.dataset.pid; picked.has(id) ? picked.delete(id) : picked.add(id); draw(); };
@@ -447,10 +465,12 @@ function openSessionSheet(key) {
     const msg = $('#sMsg');
     if (!picked.size) { msg.textContent = '商品を1つ以上選んでください'; return; }
     const products = list.filter(p => picked.has(p.id)).map(p => p.id);
+    const startStock = {};
+    document.querySelectorAll('#sStock input').forEach(i => { if (i.value !== '' && picked.has(i.dataset.pid)) startStock[i.dataset.pid] = Math.max(0, Math.floor(Number(i.value))); });
     $('#sSave').disabled = true;
     try {
       if (key) {
-        await setDoc(doc(db, 'shops', key, 'meta', 'settings'), { products }, { merge: true });
+        await updateDoc(doc(db, 'shops', key, 'meta', 'settings'), { products, startStock });
       } else {
         const name = $('#sName').value.trim();
         if (name.length < 2) { msg.textContent = 'セッション名を2文字以上で入力してください'; $('#sSave').disabled = false; return; }
@@ -460,7 +480,7 @@ function openSessionSheet(key) {
         }
         // 開始時はまだ開いていない。最初の端末が釣り銭の枚数を入れて「開ける」
         await setDoc(doc(db, 'shops', k, 'meta', 'settings'), {
-          label: name, products, open: false, float: 0, floatCounts: {}, created: Date.now(), createdBy: 'admin',
+          label: name, products, startStock, open: false, float: 0, floatCounts: {}, created: Date.now(), createdBy: 'admin',
         });
       }
       closeSheet();
