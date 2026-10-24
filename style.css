@@ -66,7 +66,13 @@ input { font: inherit; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--line);
 }
-.title { font-weight: 700; }
+.title { font-weight: 700; display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 今入っているセッション名（取り違え防止） */
+.ttl { white-space: nowrap; }
+.sess { font-size: 14px; font-weight: 800; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top { gap: 8px; }
+.sync { flex-shrink: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+#syncText { overflow: hidden; text-overflow: ellipsis; }
 .sync { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--sub); }
 .sync .dot { width: 9px; height: 9px; border-radius: 50%; background: #aaa; }
 .sync.on .dot { background: var(--ok); }

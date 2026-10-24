@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=32';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=34';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -121,6 +121,9 @@ function start(key, name) {
   onSnapshot(settingsDoc(), snap => {
     settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
     if (settings.ended) { showEnded(); return; }
+    // ヘッダーにセッション名を出す
+    $('#sessName').textContent = settings.label || '';
+    $('#sessName').hidden = !settings.label;
     const prodKey = JSON.stringify(settings.products || null);
     if (prodKey !== lastProdKey) { lastProdKey = prodKey; renderGrid(); renderSum(); }
     renderCart();
