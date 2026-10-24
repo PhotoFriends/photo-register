@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=24';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML } from './common.js?v=25';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -560,7 +560,7 @@ function buildSum() {
         <p id="closeMsg" class="small"></p>
       </div>
     </div>
-    <div class="box"><h2>締めの記録</h2><div id="closeList" class="small">まだありません</div></div>
+    <div class="box"><h2>売上高との比較（締めごと）</h2><div id="closeList" class="small">まだありません</div></div>
     <div class="box">
       <h2>その他</h2>
       <div class="tools">
@@ -655,6 +655,7 @@ function renderSum() {
     if (ps.length > 1) rows += `<tr class="subtot"><td>${esc(c)} 計</td><td>${cq}</td><td></td><td>${yen(cy)}</td></tr>`;
   }
   $('#byProd').innerHTML = `<table><tr><th>商品</th><th>販売数</th><th>残り</th><th>売上</th></tr>${rows}</table>`;
+  renderCloses();
   // 締め済みの画面にも同じ表を出す（締めたあとに商品の残りを数えて確かめられるように）
   $('#closedStock').innerHTML = $('#byProd').innerHTML;
 
@@ -816,18 +817,12 @@ function renderLastClose() {
   const c = closes.find(x => x.closedAt === settings.closedAt) || closes[0];
   const el = $('#lastClose');
   if (settings.open !== false || !c) { el.innerHTML = ''; return; }
-  el.innerHTML = `
-    <div class="row"><span>売上（${hm(c.openedAt)} 〜 ${hm(c.closedAt)}）</span><b>${yen(c.sales)}</b></div>
-    <div class="row"><span>釣り銭準備金</span><b>${yen(c.float)}</b></div>
-    <div class="row"><span>あるはずの現金</span><b>${yen(c.expected)}</b></div>
-    <div class="row"><span>数えた現金</span><b>${yen(c.counted)}</b></div>
-    <div class="row"><span>差額</span><span class="diff ${c.diff === 0 ? 'ok' : 'ng'}">${diffText(c.diff)}</span></div>`;
+  el.innerHTML = `<h2>売上高との比較</h2>${compareHTML(c, sales, hm)}`;
 }
 function renderCloses() {
   renderLastClose();
   if (!sumBuilt) return;
-  $('#closeList').innerHTML = closes.length ? `<table class="closes"><tr><th>締め</th><th>売上</th><th>あるはず</th><th>数えた</th><th>差額</th></tr>${
-    closes.map(c => `<tr><td>${hm(c.closedAt)}<br>${esc(c.by)}</td><td>${yen(c.sales)}</td><td>${yen(c.expected)}</td><td>${yen(c.counted)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}</table>` : 'まだありません';
+  $('#closeList').innerHTML = closes.length ? closes.map(c => compareHTML(c, sales, hm)).join('') : 'まだありません';
 }
 
 function downloadCsv() {

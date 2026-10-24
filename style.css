@@ -273,3 +273,11 @@ tr.subtot td { font-weight: 700; background: var(--bg); }
 .alertbar { display: flex; gap: 10px; align-items: center; background: var(--warn); color: #fff; padding: 10px 12px; font-size: 14px; font-weight: 700; }
 .alertbar span { flex: 1; }
 .alertbar .btn { padding: 8px 12px; color: var(--warn); background: #fff; border-color: #fff; }
+
+/* 売上高との比較 */
+.cmp { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; color: var(--ink); font-size: 13px; }
+.cmp-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.cmp td:last-child { font-weight: 700; }
+.cmp details { margin-top: 6px; }
+.cmp summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.cmp .diff { font-size: 14px; }

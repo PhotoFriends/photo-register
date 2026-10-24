@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts } from './common.js?v=24';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML } from './common.js?v=25';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -189,6 +189,8 @@ function renderShops() {
             ${isOpen ? `<tr><td>${hm(st.openedAt)} 〜 営業中</td><td>${cur.length}</td><td>${yen(curTotal)}</td><td>${yen(st.float)}</td><td>—</td></tr>` : ''}
             ${cs.map(c => `<tr><td>${hm(c.openedAt)} 〜 ${hm(c.closedAt)}</td><td>${c.count ?? ''}</td><td>${yen(c.sales)}</td><td>${yen(c.float)}</td><td>${c.diff > 0 ? '+' : c.diff < 0 ? '−' : ''}${yen(Math.abs(c.diff))}</td></tr>`).join('')}
           </table>
+          <h3>売上高との比較（締めごと）</h3>
+          ${cs.map(c => compareHTML(c, ss, hm)).join('') || '<div class="small">まだ締めていません</div>'}
           <h3>会計の一覧（${ss.length}件）</h3>
           <h3>扱う商品（${Array.isArray(st.products) ? st.products.length : 'すべて'}）</h3>
           <div class="small">${(Array.isArray(st.products) ? st.products.map(id => P[id]) : activeProducts(catalog)).filter(Boolean).map(p => esc(p.s || p.name)).join('、') || 'なし'}</div>
