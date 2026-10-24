@@ -3,14 +3,14 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts } from './common.js?v=22';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts } from './common.js?v=23';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
 let P = Object.fromEntries(catalog.map(p => [p.id, p]));
 const genreOf = p => p.genre || CATS[p.cat] || 'その他';
 const $ = s => document.querySelector(s);
-const yen = n => '¥' + Math.round(n || 0).toLocaleString('ja-JP');
+const yen = n => (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(n || 0)).toLocaleString('ja-JP');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hm = t => { if (!t) return '—'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const stOf = s => s.delState || (s.deleted ? 'deleted' : 'none');
