@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=20';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=22';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -357,7 +357,7 @@ function renderHist() {
   $('#hist').innerHTML = shown().map(s => `
     <div class="sale ${s.void ? 'void' : ''} ${picked.has(s.id) ? 'picked' : ''}" data-sid="${s.id}">
       <span class="chk">${picked.has(s.id) ? '✓' : ''}</span>
-      <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
+      <div class="meta">${hm(s.t)}　${esc(s.dev)}${s.manual ? '<span class="tag">手入力</span>' : ''}${s.void ? '<span class="tag">取消済</span>' : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}${s.pending ? '<span class="tag pend">未送信</span>' : ''}</div>
       <div class="act"><button data-id="${s.id}">削除をリクエスト</button></div>
       <div class="its">${itemsText(s)}</div>
       <div><div class="tot">${yen(s.total)}</div><div class="pay">預 ${yen(s.paid)}／釣 ${yen(s.change)}</div></div>
@@ -655,6 +655,8 @@ function renderSum() {
     if (ps.length > 1) rows += `<tr class="subtot"><td>${esc(c)} 計</td><td>${cq}</td><td></td><td>${yen(cy)}</td></tr>`;
   }
   $('#byProd').innerHTML = `<table><tr><th>商品</th><th>販売数</th><th>残り</th><th>売上</th></tr>${rows}</table>`;
+  // 締め済みの画面にも同じ表を出す（締めたあとに商品の残りを数えて確かめられるように）
+  $('#closedStock').innerHTML = $('#byProd').innerHTML;
 
   const devs = {};
   live.forEach(s => { devs[s.dev] = devs[s.dev] || { n: 0, y: 0 }; devs[s.dev].n++; devs[s.dev].y += s.total; });

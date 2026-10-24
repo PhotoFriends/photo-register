@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts } from './common.js?v=20';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts } from './common.js?v=22';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -192,12 +192,13 @@ function renderShops() {
           <h3>会計の一覧（${ss.length}件）</h3>
           <h3>扱う商品（${Array.isArray(st.products) ? st.products.length : 'すべて'}）</h3>
           <div class="small">${(Array.isArray(st.products) ? st.products.map(id => P[id]) : activeProducts(catalog)).filter(Boolean).map(p => esc(p.s || p.name)).join('、') || 'なし'}</div>
+          <div class="adm-act" style="margin:12px 0 0"><button class="btn primary" data-manual="${k}">記録されなかった会計を手入力</button></div>
           ${st.ended ? '' : `<div class="adm-act" style="margin:12px 0">
             <button class="btn" data-prods="${k}">扱う商品を変える</button>
             <button class="btn danger" data-end="${k}">このセッションを強制終了</button></div>`}
           ${ss.map(s => `
             <div class="adm-sale ${s.void || isDel(s) ? 'void' : ''}">
-              <span>${hm(s.t)} ${esc(s.dev)}${s.void ? '<span class="tag">取消済</span>' : ''}${isDel(s) ? `<span class="tag">${stOf(s) === 'requested' ? '削除リクエスト' : '削除済み'}</span>` : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}<br>${itemsText(s)}</span>
+              <span>${hm(s.t)} ${esc(s.dev)}${s.manual ? '<span class="tag">手入力</span>' : ''}${s.void ? '<span class="tag">取消済</span>' : ''}${isDel(s) ? `<span class="tag">${stOf(s) === 'requested' ? '削除リクエスト' : '削除済み'}</span>` : ''}${s.rejected ? '<span class="tag">削除却下</span>' : ''}<br>${itemsText(s)}</span>
               <b>${yen(s.total)}</b>
             </div>`).join('') || '<div class="small">会計はありません</div>'}
         </div>`;
@@ -214,6 +215,12 @@ function renderShops() {
   }).join('');
 }
 // 強制終了：全端末で使えなくなる（データは残る）。2回タップで実行
+$('#shopList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-manual]');
+  if (!b) return;
+  e.stopPropagation();
+  openManualSheet(b.dataset.manual);
+});
 $('#shopList').addEventListener('click', e => {
   const b = e.target.closest('button[data-prods]');
   if (!b) return;
@@ -420,5 +427,75 @@ function openSessionSheet(key) {
       }
       closeSheet();
     } catch (e) { msg.textContent = '保存できませんでした（' + (e.code || '') + '）'; $('#sSave').disabled = false; }
+  };
+}
+
+/* ---------- 記録されなかった会計を手入力 ---------- */
+// 会計画面と同じ − ／ ＋ で数を入れる。日時と理由も残す。売上・集計に入り、履歴には「手入力」と出る
+const toLocalInput = t => { const d = new Date(t - new Date(t).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+function openManualSheet(key) {
+  const st = shops[key];
+  const ids = Array.isArray(st.products) ? st.products : activeProducts(catalog).map(p => p.id);
+  const list = ids.map(id => P[id]).filter(Boolean);
+  const qty = {};
+  // 既定の日時：締め済みなら締めの1分前（その営業の売上に入るように）、それ以外は今
+  const defT = st.open === false && st.closedAt ? st.closedAt - 60000 : Date.now();
+  $('#sheetBody').innerHTML = `
+    <div class="sheet-head"><button class="btn ghost" id="mBack">戻る</button><span>会計を手入力</span><span></span></div>
+    <div class="form">
+      <div class="row"><span>セッション</span><b>${esc(label(key))}</b></div>
+      <div class="adm-grid" id="mGrid" style="padding:0"></div>
+      <div class="row"><span>合計</span><b id="mTotal" style="font-size:22px">¥0</b></div>
+      <label>会計の日時<input id="mTime" type="datetime-local" value="${toLocalInput(defT)}"></label>
+      <label>理由・メモ<input id="mNote" maxlength="80" placeholder="例：15:20以降の記録漏れ（商品の残りから確認）"></label>
+      <p class="small">締めのあとに入力した場合、締めの記録（あるはずの現金・差額）は変わりません。売上合計と商品別の集計には入ります。</p>
+      <p id="mMsg" class="msg"></p>
+      <button class="btn primary big" id="mSave" disabled>この会計を記録する</button>
+    </div>`;
+  const total = () => list.reduce((t, p) => t + (qty[p.id] || 0) * p.price, 0);
+  const draw = () => {
+    $('#mGrid').innerHTML = list.map(p => `
+      <div class="item ${qty[p.id] ? 'sel' : ''}" data-pid="${p.id}" style="cursor:default">
+        ${card(p)}
+        <div class="stepper">
+          <button data-act="minus" ${qty[p.id] ? '' : 'disabled'}>−</button>
+          <span class="qty">${qty[p.id] || 0}</span>
+          <button data-act="plus">＋</button>
+        </div>
+      </div>`).join('');
+    $('#mTotal').textContent = yen(total());
+    $('#mSave').disabled = !total() && !Object.values(qty).some(Boolean);
+  };
+  draw();
+  sheet.hidden = false;
+  $('#mBack').onclick = closeSheet;
+  $('#mGrid').onclick = e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const id = b.closest('.item').dataset.pid;
+    qty[id] = Math.max(0, (qty[id] || 0) + (b.dataset.act === 'plus' ? 1 : -1));
+    if (!qty[id]) delete qty[id];
+    draw();
+  };
+  $('#mSave').onclick = async () => {
+    const items = Object.fromEntries(Object.entries(qty).filter(([, q]) => q > 0));
+    if (!Object.keys(items).length) return;
+    const t = new Date($('#mTime').value).getTime();
+    if (!Number.isFinite(t)) { $('#mMsg').textContent = '日時を入力してください'; return; }
+    const sum = total();
+    const now = Date.now();
+    const id = 'm-' + now.toString(36) + '-' + crypto.randomUUID().slice(0, 6);
+    $('#mSave').disabled = true;
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'shops', key, 'sales', id), {
+        items, prices: Object.fromEntries(Object.keys(items).map(i => [i, P[i].price])),
+        total: sum, paid: sum, change: 0, t, at: now, dev: '管理者（手入力）', void: false,
+        manual: true, note: $('#mNote').value.trim(),
+      });
+      batch.set(doc(db, 'shops', key, 'adminlog', `${now.toString(36)}-manual`), { action: 'manual', sale: id, total: sum, t: now });
+      await batch.commit();
+      closeSheet();
+    } catch (e) { $('#mMsg').textContent = '記録できませんでした（' + (e.code || '') + '）'; $('#mSave').disabled = false; }
   };
 }
