@@ -305,3 +305,5 @@ tr.void td { opacity: .6; }
   background: var(--warn); color: #fff; font-weight: 800; font-size: 13px; padding: 3px 10px; border-radius: 6px; white-space: nowrap;
 }
 .item.soldout .ph { filter: grayscale(1); opacity: .6; }
+#ssEdit { margin-top: 8px; margin-left: 4px; }
+#ssForm .selrow input { flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); -webkit-user-select: text; user-select: text; }

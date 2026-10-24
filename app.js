@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=30';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=31';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -561,6 +561,17 @@ function buildSum() {
         <div class="selrow" style="margin-top:8px"><button id="scSave" class="btn primary">保存</button><button id="scCancel" class="btn ghost">やめる</button></div>
       </div>
       <p id="scMsg" class="small"></p>
+      <button id="ssEdit" class="btn ghost">最初の在庫を変更</button>
+      <div id="ssForm" hidden>
+        <p class="small">このセッションの最初の在庫を直します。売り切れ表示と残りの計算に使われます。変更には締めのパスワードが必要です。</p>
+        <div id="ssInputs" class="scgrid"></div>
+        <div class="selrow" style="margin-top:8px">
+          <input id="ssPw" type="password" inputmode="numeric" autocomplete="off" placeholder="締めのパスワード">
+          <button id="ssSave" class="btn primary">保存</button>
+          <button id="ssCancel" class="btn ghost">やめる</button>
+        </div>
+      </div>
+      <p id="ssMsg" class="small"></p>
     </div>
     <div class="box"><h2>端末別</h2><div id="byDev"></div></div>
     <div class="box">
@@ -653,6 +664,38 @@ function buildSum() {
     $('#scMsg').textContent = '';
   };
   $('#scCancel').onclick = () => { $('#scForm').hidden = true; $('#scEdit').hidden = false; };
+  // 最初の在庫の変更（販売中でも可。締めのパスワードをサーバーで照合）
+  $('#ssEdit').onclick = () => {
+    $('#ssInputs').innerHTML = shownProducts().map(p => `<label>${esc(p.s || p.name)}<input data-pid="${p.id}" type="number" inputmode="numeric" min="0" value="${stockOf(p) ?? ''}"></label>`).join('');
+    $('#ssForm').hidden = false;
+    $('#ssEdit').hidden = true;
+    $('#ssMsg').textContent = '';
+  };
+  $('#ssCancel').onclick = () => { $('#ssForm').hidden = true; $('#ssEdit').hidden = false; $('#ssPw').value = ''; };
+  $('#ssPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ssSave').click(); });
+  $('#ssSave').onclick = async () => {
+    const pw = $('#ssPw').value;
+    if (!pw) { $('#ssMsg').textContent = '締めのパスワードを入力してください'; return; }
+    if (!navigator.onLine || fromCache) { $('#ssMsg').textContent = '変更は電波のある場所で行ってください'; return; }
+    const startStock = {};
+    document.querySelectorAll('#ssInputs input').forEach(i => { if (i.value !== '') startStock[i.dataset.pid] = Math.max(0, Math.floor(Number(i.value))); });
+    const now = Date.now();
+    const op = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
+    $('#ssSave').disabled = true;
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'shops', shopKey, 'closeauth', op), { pw, by: device, t: now, kind: 'stock' });
+      batch.update(settingsDoc(), { startStock, stockOp: op, stockBy: device, stockT: now });
+      await batch.commit();
+      $('#ssForm').hidden = true;
+      $('#ssEdit').hidden = false;
+      $('#ssMsg').textContent = '最初の在庫を変更しました';
+    } catch (e) {
+      $('#ssMsg').textContent = e.code === 'permission-denied' ? 'パスワードが違います' : '変更できませんでした（通信を確認してください）';
+    }
+    $('#ssPw').value = '';
+    $('#ssSave').disabled = false;
+  };
   $('#scSave').onclick = () => {
     const counts = {};
     document.querySelectorAll('#scInputs input').forEach(i => { if (i.value !== '') counts[i.dataset.pid] = Math.max(0, Math.floor(Number(i.value))); });

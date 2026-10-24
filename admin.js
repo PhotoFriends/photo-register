@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=30';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=31';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
