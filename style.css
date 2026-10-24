@@ -135,8 +135,15 @@ input { font: inherit; }
 }
 .sheet-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; font-weight: 700; }
 .sheet-head .btn { justify-self: start; padding: 8px 12px; }
-.lines { font-size: 14px; color: var(--sub); max-height: 22vh; overflow-y: auto; }
-.lines div { display: flex; justify-content: space-between; padding: 2px 0; }
+.lines { font-size: 14px; max-height: 30vh; overflow-y: auto; display: grid; gap: 6px; }
+/* お会計の明細：写真・名前・個数・小計 */
+.lines .line { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 10px; }
+.lines .line img { width: 64px; height: 44px; object-fit: contain; background: #eceae6; border-radius: 6px; }
+.lines .ln { min-width: 0; display: grid; }
+.lines .ln b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lines .ln small { font-size: 11px; color: var(--sub); }
+.lines .lq { font-size: 20px; font-weight: 800; color: var(--accent); }
+.lines .ly { font-size: 13px; color: var(--sub); min-width: 56px; text-align: right; }
 .amt { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); }
 .amt b { font-size: 26px; font-variant-numeric: tabular-nums; }
 .amt.paid b { color: var(--accent); }
@@ -311,3 +318,14 @@ tr.void td { opacity: .6; }
   background: var(--warn); color: #fff; font-weight: 800; font-size: 13px; padding: 3px 10px; border-radius: 6px; white-space: nowrap;
 }
 .item.soldout .ph { filter: grayscale(1); opacity: .6; }
+
+/* お会計：確定ボタンを常に画面下に見せる（明細が増えても押せるように） */
+/* 明細が多いときは明細だけが縮んでスクロールし、金額・キー・確定ボタンは常に画面内 */
+.paybody { display: flex; flex-direction: column; overflow: hidden; }
+.paybody > * { flex-shrink: 0; }
+.paybody > .lines { flex: 0 1 auto; min-height: 56px; max-height: none; }
+.keys button { padding: 9px 0; font-size: 20px; }
+.quick button { padding: 8px 0; }
+.amt { padding: 2px 0; }
+.amt b { font-size: 24px; }
+.amt.change b { font-size: 30px; }

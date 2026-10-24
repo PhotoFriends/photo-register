@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=34';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=37';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -297,8 +297,14 @@ $('#clearBtn').onclick = () => { cart = {}; renderCart(); };
 /* ---------- お会計 ---------- */
 $('#payBtn').onclick = () => {
   paidStr = '';
-  $('#lines').innerHTML = Object.entries(cart).map(([id, q]) =>
-    `<div><span>${esc(P[id].name)} × ${q}</span><span>${yen(P[id].price * q)}</span></div>`).join('');
+  // 写真付きで並べる（手に持っている商品と見比べて確定できるように）
+  $('#lines').innerHTML = Object.entries(cart).map(([id, q]) => `
+    <div class="line">
+      <img src="${P[id].img || ''}" alt="">
+      <span class="ln"><b>${esc(P[id].s || P[id].name)}</b><small>${esc(genreOf(P[id]))}・${yen(P[id].price)}</small></span>
+      <span class="lq">×${q}</span>
+      <span class="ly">${yen(P[id].price * q)}</span>
+    </div>`).join('');
   $('#billAmt').textContent = yen(cartTotal());
   renderPay();
   $('#sheet').hidden = false;
