@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=29';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=30';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -122,7 +122,8 @@ function start(key, name) {
     settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
     if (settings.ended) { showEnded(); return; }
     const prodKey = JSON.stringify(settings.products || null);
-    if (prodKey !== lastProdKey) { lastProdKey = prodKey; renderGrid(); renderCart(); renderSum(); }
+    if (prodKey !== lastProdKey) { lastProdKey = prodKey; renderGrid(); renderSum(); }
+    renderCart();
     renderOpen();
     renderSum();
   });
@@ -148,6 +149,7 @@ function rebuildSales() {
   renderDels();
   renderSum();
   renderAlert();
+  renderCart();
 }
 function sendSale(id) {
   if (inFlight.has(id) || !outbox[id] || broken || outbox[id].refused) return;
@@ -230,6 +232,7 @@ function renderGrid() {
       <span class="cat ${p.cat || ''}">${esc(genreOf(p))}</span>
       <span class="nm">${esc(p.name)}</span>
       <span class="pr">${yen(p.price)}</span>
+      <span class="soldtag">売り切れ</span>
       <div class="stepper">
         <button data-act="minus" aria-label="1つ減らす">−</button>
         <span class="qty">0</span>
@@ -249,18 +252,37 @@ $('#grid').addEventListener('click', e => {
     return;
   }
   if (btn.dataset.act === 'minus') cart[id] = Math.max(0, (cart[id] || 0) - 1);
-  else cart[id] = (cart[id] || 0) + 1;
+  else {
+    const r = remainingMap()[id];
+    if (r != null && (cart[id] || 0) >= r) return;
+    cart[id] = (cart[id] || 0) + 1;
+  }
   if (!cart[id]) delete cart[id];
   renderCart();
 });
 const cartTotal = () => Object.entries(cart).reduce((t, [id, q]) => t + P[id].price * q, 0);
 const cartCount = () => Object.values(cart).reduce((t, q) => t + q, 0);
+// このセッションでの残り（最初の在庫 − 全端末の販売数）。在庫の決まっていない商品は null（無制限）
+function remainingMap() {
+  const sold = {};
+  sales.forEach(s => { if (!s.void && !isDel(s)) Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; }); });
+  const rem = {};
+  shownProducts().forEach(p => { const st = stockOf(p); rem[p.id] = st == null ? null : st - (sold[p.id] || 0); });
+  return rem;
+}
 function renderCart() {
+  const rem = remainingMap();
   document.querySelectorAll('.item').forEach(el => {
-    const q = cart[el.dataset.id] || 0;
+    const id = el.dataset.id;
+    const q = cart[id] || 0;
+    const r = rem[id];
+    // 残りが0なら売り切れ（網掛け、＋は押せない）。かごに入れた数が残りに達したら＋は止める
+    const soldOut = r != null && r <= 0 && !q;
     el.classList.toggle('sel', q > 0);
+    el.classList.toggle('soldout', soldOut);
     el.querySelector('.qty').textContent = q;
     el.querySelector('[data-act=minus]').disabled = !q;
+    el.querySelector('.stepper [data-act=plus]').disabled = r != null && q >= r;
   });
   $('#cartTotal').textContent = yen(cartTotal());
   $('#cartCount').textContent = cartCount() + '点';
