@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=23';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=24';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));

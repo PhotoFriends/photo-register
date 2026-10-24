@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -45,12 +45,16 @@
     <div id="closedPanel" class="closedp" hidden>
       <h2 id="closedTitle">締め済み</h2>
       <p id="closedAt" class="small"></p>
+      <div class="box" style="padding:10px 12px">
+        <h2>開ける</h2>
+        <div class="lbl">開始時の釣り銭準備金（枚数）</div>
+        <div id="openCash" class="cash"></div>
+        <div class="row"><span>釣り銭準備金</span><b id="openTotal">¥0</b></div>
+        <button id="openBtn" class="btn primary big">開ける</button>
+        <p class="small" style="margin:6px 0 0">釣り銭の枚数を入れると押せます</p>
+      </div>
       <div id="lastClose" class="box" style="padding:8px 12px"></div>
       <div class="box" style="padding:8px 12px"><h2>商品の残り</h2><div id="closedStock"></div></div>
-      <div class="lbl">開始時の釣り銭準備金（枚数）</div>
-      <div id="openCash" class="cash"></div>
-      <div class="row"><span>釣り銭準備金</span><b id="openTotal">¥0</b></div>
-      <button id="openBtn" class="btn primary big">開ける</button>
     </div>
     <div id="grid" class="grid"></div>
     <div class="cartbar">
@@ -154,6 +158,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=23"></script>
+<script type="module" src="app.js?v=24"></script>
 </body>
 </html>
