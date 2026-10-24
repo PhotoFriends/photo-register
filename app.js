@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML } from './common.js?v=26';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=28';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -15,6 +15,7 @@ const shownProducts = () => {
   return Array.isArray(ids) ? list.filter(p => ids.includes(p.id)) : list;
 };
 const genreOf = p => p.genre || CATS[p.cat] || 'その他';
+const stockProducts = () => shownProducts().filter(p => p.stock != null);
 
 const $ = s => document.querySelector(s);
 const yen = n => (n < 0 ? '−' : '') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
@@ -526,6 +527,17 @@ function buildSum() {
       <div class="kpi"><span>点数</span><b id="kItems">0</b></div>
     </div>
     <div class="box"><h2>商品別</h2><div id="byProd"></div></div>
+    <div class="box">
+      <h2>残りの照合</h2>
+      <div id="stockCmp"></div>
+      <button id="scEdit" class="btn">数えた残りを登録</button>
+      <div id="scForm" hidden>
+        <p class="small">商品ごとに、実際に数えた残りを入れてください（数えていない商品は空のまま）。</p>
+        <div id="scInputs" class="scgrid"></div>
+        <div class="selrow" style="margin-top:8px"><button id="scSave" class="btn primary">保存</button><button id="scCancel" class="btn ghost">やめる</button></div>
+      </div>
+      <p id="scMsg" class="small"></p>
+    </div>
     <div class="box"><h2>端末別</h2><div id="byDev"></div></div>
     <div class="box">
       <h2>締め（現金の確認）</h2>
@@ -608,6 +620,26 @@ function buildSum() {
   $('#closeCancel').onclick = () => lockClose('');
   $('#closeGo').onclick = doClose;
   $('#csvBtn').onclick = downloadCsv;
+  // 数えた残りの登録（セッションに保存。全端末で共有）
+  $('#scEdit').onclick = () => {
+    const counts = settings.stockCount?.counts || {};
+    $('#scInputs').innerHTML = stockProducts().map(p => `<label>${esc(p.s || p.name)}<input data-pid="${p.id}" type="number" inputmode="numeric" min="0" value="${counts[p.id] ?? ''}"></label>`).join('');
+    $('#scForm').hidden = false;
+    $('#scEdit').hidden = true;
+    $('#scMsg').textContent = '';
+  };
+  $('#scCancel').onclick = () => { $('#scForm').hidden = true; $('#scEdit').hidden = false; };
+  $('#scSave').onclick = () => {
+    const counts = {};
+    document.querySelectorAll('#scInputs input').forEach(i => { if (i.value !== '') counts[i.dataset.pid] = Math.max(0, Math.floor(Number(i.value))); });
+    const sc = { counts, t: Date.now(), by: device };
+    settings = { ...settings, stockCount: sc };
+    updateDoc(settingsDoc(), { stockCount: sc }).catch(() => { $('#scMsg').textContent = '保存できませんでした（通信を確認してください）'; });
+    $('#scForm').hidden = true;
+    $('#scEdit').hidden = false;
+    $('#scMsg').textContent = '数えた残りを登録しました';
+    renderSum();
+  };
   $('#logoutBtn').onclick = () => {
     const pend = sales.filter(s => s.pending).length;
     if (pend && $('#logoutBtn').dataset.arm !== '1') {
@@ -658,6 +690,10 @@ function renderSum() {
   renderCloses();
   // 締め済みの画面にも同じ表を出す（締めたあとに商品の残りを数えて確かめられるように）
   $('#closedStock').innerHTML = $('#byProd').innerHTML;
+  // 残りの照合（理論上の残りと数えた残り）
+  const cmp = stockCmpHTML(listed.filter(p => p.stock != null), sold, settings.stockCount, hm);
+  $('#stockCmp').innerHTML = cmp;
+  $('#closedStockCmp').innerHTML = cmp;
 
   const devs = {};
   live.forEach(s => { devs[s.dev] = devs[s.dev] || { n: 0, y: 0 }; devs[s.dev].n++; devs[s.dev].y += s.total; });

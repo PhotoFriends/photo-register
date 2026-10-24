@@ -283,3 +283,12 @@ tr.subtot td { font-weight: 700; background: var(--bg); }
 .cmp .diff { font-size: 14px; }
 .cmp.cancelled { opacity: .7; border-style: dashed; }
 tr.void td { opacity: .6; }
+
+/* 残りの照合 */
+.stockcmp td:not(:first-child), .stockcmp th:not(:first-child) { text-align: right; }
+.stockcmp .ok { color: var(--ok); } .stockcmp .ng { color: var(--warn); font-weight: 700; }
+.stockcmp .muted { color: var(--sub); }
+.scgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px; }
+.scgrid label { display: grid; gap: 2px; font-size: 12px; color: var(--sub); }
+.scgrid input { padding: 8px; border: 1px solid var(--line); border-radius: 8px; text-align: right; font-size: 16px; background: var(--card); color: var(--ink); -webkit-user-select: text; user-select: text; }
+#stockCmp + .btn { margin-top: 8px; }

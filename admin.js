@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from 'https:/
 import {
   getFirestore, collection, collectionGroup, doc, getDoc, getDocFromServer, setDoc, deleteDoc, onSnapshot, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML } from './common.js?v=26';
+import { firebaseConfig, PRODUCTS, CATS, activeProducts, compareHTML, stockCmpHTML } from './common.js?v=28';
 
 // 商品（catalog）。読み込むまでは初期の商品
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -193,6 +193,14 @@ function renderShops() {
           </table>
           <h3>売上高との比較（締めごと）</h3>
           ${cs.map(c => compareHTML(c, ss, hm)).join('') || '<div class="small">まだ締めていません</div>'}
+          <h3>残りの照合</h3>
+          ${(() => {
+            const sold = {};
+            live.forEach(s => Object.entries(s.items || {}).forEach(([id, q]) => { sold[id] = (sold[id] || 0) + q; }));
+            const ids = new Set([...(Array.isArray(st.products) ? st.products : activeProducts(catalog).map(p => p.id)), ...Object.keys(sold)]);
+            const prods = [...catalog].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).filter(p => ids.has(p.id));
+            return stockCmpHTML(prods, sold, st.stockCount, hm);
+          })()}
           <h3>会計の一覧（${ss.length}件）</h3>
           <h3>扱う商品（${Array.isArray(st.products) ? st.products.length : 'すべて'}）</h3>
           <div class="small">${(Array.isArray(st.products) ? st.products.map(id => P[id]) : activeProducts(catalog)).filter(Boolean).map(p => esc(p.s || p.name)).join('、') || 'なし'}</div>

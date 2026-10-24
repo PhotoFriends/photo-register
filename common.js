@@ -68,3 +68,32 @@ export function compareHTML(c, sales, hm) {
       </details>
     </div>`;
 }
+
+const sgnN = n => (n > 0 ? '+' + n : n < 0 ? '−' + Math.abs(n) : '0');
+// 残りの照合：理論上の残り（最初の在庫 − 販売数）と数えた残りを並べ、差を出す
+// sc = セッションに登録された数えた残り { counts: {商品id: 数}, t, by }
+export function stockCmpHTML(products, sold, sc, hm) {
+  const counts = sc?.counts || {};
+  const list = products.filter(p => p.stock != null);
+  if (!list.length) return '<p class="small">在庫数が登録された商品がありません</p>';
+  let sumT = 0, sumC = 0, sumD = 0, sumY = 0, any = false;
+  const rows = list.map(p => {
+    const theory = p.stock - (sold[p.id] || 0);
+    const has = counts[p.id] != null && counts[p.id] !== '';
+    const c = has ? Number(counts[p.id]) : null;
+    if (!has) return `<tr><td>${p.s || p.name}</td><td>${theory}</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>`;
+    any = true;
+    const d = c - theory;
+    // 売上への影響：残りが理論より多い＝実際は記録より売れていない（−）、少ない＝記録より売れている（＋）
+    const y = -d * p.price;
+    sumT += theory; sumC += c; sumD += d; sumY += y;
+    return `<tr><td>${p.s || p.name}</td><td>${theory}</td><td>${c}</td><td class="${d ? 'ng' : 'ok'}">${sgnN(d)}</td><td class="${d ? 'ng' : ''}">${y > 0 ? '+' : ''}${fmtYen(y)}</td></tr>`;
+  }).join('');
+  return `
+    <table class="stockcmp">
+      <tr><th>商品</th><th>理論上の残り</th><th>数えた残り</th><th>差</th><th>売上への影響</th></tr>
+      ${rows}
+      ${any ? `<tr class="subtot"><td>合計</td><td>${sumT}</td><td>${sumC}</td><td class="${sumD ? 'ng' : 'ok'}">${sgnN(sumD)}</td><td>${sumY > 0 ? '+' : ''}${fmtYen(sumY)}</td></tr>` : ''}
+    </table>
+    <p class="small">${sc?.t ? `数えた残り：${hm(sc.t)} ${String(sc.by || '').replace(/[<>&]/g, '')} が登録。` : 'まだ数えた残りが登録されていません。'}差 ＝ 数えた残り − 理論上の残り。差が＋の商品は、記録ほど売れていない（打ち間違い・最初の数が多かった）、−の商品は記録より多く売れた・なくなった可能性があります。売上への影響の合計は、数えた残りが正しいとしたときの「実際の売上 − 記録上の売上」です。</p>`;
+}
