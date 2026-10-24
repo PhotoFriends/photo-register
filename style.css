@@ -268,3 +268,8 @@ tr.subtot td { font-weight: 700; background: var(--bg); }
 .sheet-actions { display: flex; gap: 8px; }
 .sheet-actions .btn { flex: 1; }
 .adm-bar { padding: 8px 8px 0; display: flex; gap: 8px; }
+
+/* 未送信の警告 */
+.alertbar { display: flex; gap: 10px; align-items: center; background: var(--warn); color: #fff; padding: 10px 12px; font-size: 14px; font-weight: 700; }
+.alertbar span { flex: 1; }
+.alertbar .btn { padding: 8px 12px; color: var(--warn); background: #fff; border-color: #fff; }

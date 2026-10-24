@@ -3,7 +3,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
-import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=18';
+import { firebaseConfig, PRODUCTS, CATS, DENOMS, activeProducts } from './common.js?v=20';
 
 // 商品は管理画面で登録したもの（catalog）。まだ無いときは初期の商品を使う
 let catalog = PRODUCTS.map((p, i) => ({ ...p, order: i }));
@@ -106,15 +106,15 @@ function start(key, name) {
   renderGrid();
   // 参加した端末を記録（売上がまだなくても「端末別」に出すため）
   setDoc(settingsDoc(), { devices: { [name]: Date.now() } }, { merge: true }).catch(() => {});
+  // 端末内の控え（未送信の会計）を読み込んで送り直す
+  outbox = loadOutbox();
+  rebuildSales();
+  Object.keys(outbox).forEach(sendSale);
   onSnapshot(salesCol(), { includeMetadataChanges: true }, snap => {
     fromCache = snap.metadata.fromCache;
-    sales = snap.docs.map(d => ({ id: d.id, ...d.data(), pending: d.metadata.hasPendingWrites }))
-      .sort((a, b) => b.t - a.t);
-    renderSync();
-    renderHist();
-    renderDels();
-    renderSum();
-  }, () => renderSync(true));
+    serverSales = snap.docs.map(d => ({ id: d.id, ...d.data(), pending: d.metadata.hasPendingWrites }));
+    rebuildSales();
+  }, e => markBroken(e));
   onSnapshot(settingsDoc(), snap => {
     settings = { float: 0, open: true, openedAt: 0, ...(snap.data() || {}) };
     if (settings.ended) { showEnded(); return; }
@@ -125,13 +125,89 @@ function start(key, name) {
   });
 }
 
+/* ---------- 未送信の会計（端末内の控え） ---------- */
+// iPhone の Safari では、長時間開いたままだと Firebase の保存領域（IndexedDB）が壊れ、
+// 会計が保存も送信もされずに消えることがある。そこで会計はまず localStorage に控えを書き、
+// サーバーが受け取ったと確認できてから控えを消す。控えは履歴・集計にも含める。
+let serverSales = [];
+let outbox = {};
+const inFlight = new Set();
+let broken = false;
+const outboxKey = () => 'pf.outbox.' + shopKey;
+function loadOutbox() { try { return JSON.parse(localStorage.getItem(outboxKey()) || '{}'); } catch { return {}; } }
+function saveOutbox(o) { try { localStorage.setItem(outboxKey(), JSON.stringify(o)); } catch {} }
+function rebuildSales() {
+  const have = new Set(serverSales.map(s => s.id));
+  const extra = Object.entries(outbox).filter(([id]) => !have.has(id)).map(([id, d]) => ({ id, ...d, pending: true, local: true }));
+  sales = [...serverSales.map(s => (outbox[s.id] ? { ...s, pending: true } : s)), ...extra].sort((a, b) => b.t - a.t);
+  renderSync();
+  renderHist();
+  renderDels();
+  renderSum();
+  renderAlert();
+}
+function sendSale(id) {
+  if (inFlight.has(id) || !outbox[id] || broken || outbox[id].refused) return;
+  inFlight.add(id);
+  outbox[id].tries = (outbox[id].tries || 0) + 1;
+  outbox[id].lastTry = Date.now();
+  const { tries, lastTry, ...data } = outbox[id];
+  // merge なので、送り直しても削除リクエストなど後からの変更は消さない
+  setDoc(doc(salesCol(), id), { ...data, at: serverTimestamp() }, { merge: true })
+    .then(() => { inFlight.delete(id); delete outbox[id]; saveOutbox(outbox); rebuildSales(); })
+    .catch(e => {
+      inFlight.delete(id);
+      // サーバーが受け付けない（終了したセッションなど）ときは控えを残して知らせるだけ
+      if (e?.code === 'permission-denied') { outbox[id].refused = true; saveOutbox(outbox); renderAlert(); return; }
+      markBroken(e);
+    });
+}
+function markBroken() {
+  if (!broken) { broken = true; renderSync(); }
+  renderAlert();
+  maybeReload();
+}
+// 送ってから時間がたっても届かない会計（電波はあるのに）
+const stale = () => navigator.onLine && Object.values(outbox).some(d => !d.refused && Date.now() - (d.lastTry || d.t) > 45000);
+function renderAlert() {
+  const n = Object.keys(outbox).length;
+  const refused = Object.values(outbox).some(d => d.refused);
+  const show = n > 0 && (broken || stale() || refused);
+  $('#alertBar').hidden = !show;
+  if (show) $('#alertText').textContent = refused
+    ? `サーバーが受け付けなかった会計が ${n} 件あります（この端末に保存済み）。管理者に連絡してください。`
+    : `送信できていない会計が ${n} 件あります（この端末に保存済み）。再読み込みすると送信します。`;
+}
+// 会計の途中でなければ自動で再読み込みして送り直す
+function maybeReload() {
+  if (!(broken || stale())) return;
+  const busy = Object.keys(cart).length || !$('#sheet').hidden || !$('#done').hidden || closePwOk || floatEditing;
+  // 自動の再読み込みは1分に1回まで
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('pf.reloadAt') || 0); } catch {}
+  if (Date.now() - last < 60000) return;
+  if (!busy && document.visibilityState === 'visible') setTimeout(() => {
+    if (Object.keys(cart).length || !$('#sheet').hidden || !$('#done').hidden) return;
+    try { sessionStorage.setItem('pf.reloadAt', String(Date.now())); } catch {}
+    location.reload();
+  }, 1500);
+}
+$('#alertBtn').onclick = () => location.reload();
+setInterval(() => { if (!shopKey) return; Object.keys(outbox).forEach(sendSale); renderAlert(); maybeReload(); }, 15000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && shopKey) { Object.keys(outbox).forEach(sendSale); renderAlert(); maybeReload(); } });
+// Firebase の保存領域が壊れたときのエラー（Safari の IndexedDB など）
+const brokenMsg = /IndexedDB|INTERNAL ASSERTION|database server|Database deleted|FIRESTORE/i;
+addEventListener('unhandledrejection', e => { if (brokenMsg.test(String(e.reason?.message || e.reason))) markBroken(e.reason); });
+addEventListener('error', e => { if (brokenMsg.test(String(e.message))) markBroken(e.error); });
+
 /* ---------- 同期表示 ---------- */
 function renderSync(err) {
+  if (err) markBroken(err);
   const pend = sales.filter(s => s.pending).length;
   const el = $('#sync');
   el.className = 'sync';
   let text;
-  if (err) { el.classList.add('off'); text = 'エラー'; }
+  if (broken) { el.classList.add('off'); text = pend ? `送信エラー（未送信${pend}件）` : '送信エラー'; }
   else if (!navigator.onLine || fromCache) { el.classList.add('off'); text = pend ? `オフライン（未送信${pend}件）` : 'オフライン'; }
   else if (pend) { el.classList.add('wait'); text = `送信中 ${pend}件`; }
   else { el.classList.add('on'); text = '同期済み'; }
@@ -243,11 +319,14 @@ $('#okBtn').onclick = () => {
   $('#okBtn').disabled = true;
   const now = Date.now();
   const id = now.toString(36) + '-' + crypto.randomUUID().slice(0, 8);
-  // 待たずに書き込む：端末内のキャッシュには即時反映、送信は裏で行われる
-  setDoc(doc(salesCol(), id), {
+  // まず端末内の控え（localStorage）に保存してから送る。サーバーが受け取ったら控えを消す
+  outbox[id] = {
     items: { ...cart }, prices: Object.fromEntries(Object.keys(cart).map(id => [id, P[id].price])), total, paid, change: paid - total,
-    t: now, at: serverTimestamp(), dev: device, void: false,
-  }).catch(() => renderSync(true));
+    t: now, dev: device, void: false,
+  };
+  saveOutbox(outbox);
+  rebuildSales();
+  sendSale(id);
   $('#doneChange').textContent = yen(paid - total);
   $('#doneSub').textContent = `請求 ${yen(total)} ／ お預かり ${yen(paid)}`;
   $('#sheet').hidden = true;
@@ -255,7 +334,7 @@ $('#okBtn').onclick = () => {
   cart = {};
   renderCart();
 };
-$('#nextBtn').onclick = () => { $('#done').hidden = true; };
+$('#nextBtn').onclick = () => { $('#done').hidden = true; maybeReload(); };
 
 /* ---------- 画面切替 ---------- */
 document.querySelector('.tabs').addEventListener('click', e => {

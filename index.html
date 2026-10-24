@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="フォトフレンズ 販売記録">
 <meta name="theme-color" content="#ffffff">
 <title>フォトフレンズ 販売記録</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -31,6 +31,10 @@
 
 <!-- 本体 -->
 <div id="app" hidden>
+  <div id="alertBar" class="alertbar" hidden>
+    <span id="alertText"></span>
+    <button id="alertBtn" class="btn">再読み込み</button>
+  </div>
   <header class="top">
     <div class="title">フォトフレンズ 販売記録</div>
     <div id="sync" class="sync"><span class="dot"></span><span id="syncText">接続中</span></div>
@@ -149,6 +153,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=18"></script>
+<script type="module" src="app.js?v=20"></script>
 </body>
 </html>
